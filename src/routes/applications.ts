@@ -215,6 +215,20 @@ export async function applicationRoutes(fastify: FastifyInstance) {
           .collection('loanApplications')
           .doc(applicationId);
 
+        const appDoc = await appRef.get();
+        if (!appDoc.exists) {
+          return reply.code(404).send({ error: 'Application not found' });
+        }
+
+        const currentStatus = appDoc.data()?.status;
+
+        // VALIDACIÓN CRÍTICA: No permitir cambiar estado de préstamos desembolsados
+        if (currentStatus === 'disbursed') {
+          return reply.code(400).send({
+            error: 'No se puede cambiar el estado de un préstamo ya desembolsado',
+          });
+        }
+
         await appRef.update({
           status,
           updatedAt: new Date(),
@@ -222,7 +236,7 @@ export async function applicationRoutes(fastify: FastifyInstance) {
 
         // Log transition
         await appRef.collection('transitions').add({
-          from: (await appRef.get()).data()?.status,
+          from: currentStatus,
           to: status,
           timestamp: new Date(),
           userId: user.uid,
