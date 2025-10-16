@@ -100,6 +100,11 @@ export class DecisionService {
 
     const appData = appDoc.data() as any;
 
+    // VALIDACIÓN CRÍTICA: No permitir cambiar decisión de préstamos desembolsados
+    if (appData.status === 'disbursed') {
+      throw new Error("No se puede modificar la decisión de un préstamo ya desembolsado");
+    }
+
     const decision: DecisionInfo = {
       result,
       decidedBy: userId,

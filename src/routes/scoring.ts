@@ -73,6 +73,13 @@ export async function scoringRoutes(fastify: FastifyInstance) {
           hasAdditionalInfo: !!application.additionalInfo,
         });
 
+        // VALIDACIÓN CRÍTICA: No permitir recalcular scoring de préstamos desembolsados
+        if (application.status === 'disbursed') {
+          return reply.code(400).send({ 
+            error: 'No se puede recalcular el scoring de un préstamo ya desembolsado' 
+          });
+        }
+
         // Validate (pero no bloquear el cálculo)
         const validation = validationService.validate(application);
         if (!validation.isValid) {

@@ -35,7 +35,7 @@ export class DisbursementService {
     // Idempotencia: verificar si ya fue procesado
     if (this.processedRequests.has(requestId)) {
       console.log(`Solicitud ya procesada: ${requestId}`);
-      return;
+      throw new Error("Este préstamo ya fue desembolsado anteriormente");
     }
 
     // Verificar en Firestore si ya existe
@@ -46,7 +46,7 @@ export class DisbursementService {
 
     if (disbursementDoc.exists) {
       console.log(`Desembolso ya existe: ${requestId}`);
-      return;
+      throw new Error("Este préstamo ya fue desembolsado anteriormente");
     }
 
     // Obtener aplicación
@@ -62,6 +62,12 @@ export class DisbursementService {
     }
 
     const application = appDoc.data();
+    
+    // VALIDACIÓN CRÍTICA: Verificar que no esté ya desembolsado
+    if (application?.status === "disbursed") {
+      throw new Error("Este préstamo ya fue desembolsado. No se puede desembolsar dos veces.");
+    }
+
     if (application?.status !== "approved") {
       throw new Error("La solicitud debe estar aprobada para desembolsar");
     }
