@@ -8,7 +8,7 @@ import { db } from '../config/firebase';
 
 const validationService = new ValidationService();
 const routingService = new RoutingService();
-const emailService = new EmailService(config.brevo.apiKey);
+const emailService = new EmailService();
 const trackingService = new TrackingService(config.jwt.secret);
 
 export async function webhookRoutes(fastify: FastifyInstance) {
@@ -74,13 +74,9 @@ export async function webhookRoutes(fastify: FastifyInstance) {
             });
 
           // Send confirmation email if valid
+          // TODO: Implementar email de confirmación de recepción
           if (validation.isValid) {
-            await emailService.sendApplicationStatusEmail(
-              appId,
-              data.contactInfo.email,
-              data.personalInfo.firstName,
-              'received'
-            );
+            fastify.log.info(`Application received and validated: ${appId}`);
           }
         }
 
@@ -114,14 +110,8 @@ export async function webhookRoutes(fastify: FastifyInstance) {
             }
 
             // Send email notification
-            const trackingToken = trackingService.generateTrackingToken(appId, mfId);
-            await emailService.sendApplicationStatusEmail(
-              appId,
-              after.contactInfo.email,
-              after.personalInfo.firstName,
-              newStatus,
-              trackingToken
-            );
+            // Los emails se envían desde decisionService y disbursementService
+            fastify.log.info(`Status changed notification: ${appId} → ${newStatus}`);
           }
         }
 
