@@ -33,6 +33,13 @@ export class ReportService {
     microfinancieraId: string,
     filters: ReportFilters
   ): Promise<ApplicationReport[]> {
+    console.log('📊 Generando reporte:', {
+      microfinancieraId,
+      dateFrom: filters.dateFrom,
+      dateTo: filters.dateTo,
+      status: filters.status,
+    });
+
     let query = this.db
       .collection("microfinancieras")
       .doc(microfinancieraId)
@@ -45,6 +52,7 @@ export class ReportService {
     }
 
     const snapshot = await query.get();
+    console.log(`📊 Encontradas ${snapshot.size} solicitudes en el rango de fechas`);
 
     const reports: ApplicationReport[] = [];
 

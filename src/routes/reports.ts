@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { authenticate } from '../middleware/auth';
 import { ReportService } from '../services/reportService';
+import { db } from '../config/firebase';
 
 const reportService = new ReportService();
 
@@ -96,10 +97,22 @@ export async function reportRoutes(fastify: FastifyInstance) {
     async (request, reply) => {
       const { microfinancieraId, dateFrom, dateTo } = request.query;
 
+      fastify.log.info({
+        msg: 'Getting metrics',
+        microfinancieraId,
+        dateFrom,
+        dateTo,
+      });
+
       try {
         const metrics = await reportService.getConversionMetrics(microfinancieraId, {
           dateFrom: new Date(dateFrom),
           dateTo: new Date(dateTo),
+        });
+
+        fastify.log.info({
+          msg: 'Metrics calculated',
+          metrics,
         });
 
         return reply.send({ metrics });
@@ -142,6 +155,59 @@ export async function reportRoutes(fastify: FastifyInstance) {
         );
 
         return reply.send({ performance });
+      } catch (error: any) {
+        fastify.log.error(error);
+        return reply.code(500).send({ error: error.message });
+      }
+    }
+  );
+
+  // Debug endpoint - Get all applications count
+  fastify.get<{
+    Querystring: {
+      microfinancieraId: string;
+    };
+  }>(
+    '/debug/count',
+    {
+      preHandler: authenticate,
+      schema: {
+        description: 'Debug: Get total applications count by status',
+        tags: ['reports'],
+        security: [{ bearerAuth: [] }],
+      },
+    },
+    async (request, reply) => {
+      const { microfinancieraId } = request.query;
+
+      try {
+        const snapshot = await db()
+          .collection('microfinancieras')
+          .doc(microfinancieraId)
+          .collection('loanApplications')
+          .get();
+
+        const statusCount: Record<string, number> = {};
+        const applications: any[] = [];
+
+        snapshot.docs.forEach((doc) => {
+          const data = doc.data();
+          const status = data.status || 'unknown';
+          statusCount[status] = (statusCount[status] || 0) + 1;
+          
+          applications.push({
+            id: doc.id,
+            status: data.status,
+            createdAt: data.createdAt?.toDate?.()?.toISOString() || 'N/A',
+            customerName: `${data.personalInfo?.firstName || ''} ${data.personalInfo?.lastName || ''}`.trim(),
+          });
+        });
+
+        return reply.send({
+          total: snapshot.size,
+          byStatus: statusCount,
+          applications: applications.slice(0, 10), // Solo primeras 10 para no saturar
+        });
       } catch (error: any) {
         fastify.log.error(error);
         return reply.code(500).send({ error: error.message });
