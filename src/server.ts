@@ -101,6 +101,39 @@ async function start() {
       };
     });
 
+    // Root route - API info
+    fastify.get('/', async (request, reply) => {
+      return {
+        name: 'CreditoExpress API',
+        version: '1.0.0',
+        status: 'running',
+        timestamp: new Date().toISOString(),
+        endpoints: {
+          docs: '/docs',
+          health: '/health',
+          api: {
+            applications: '/api/applications',
+            scoring: '/api/scoring',
+            decisions: '/api/decisions',
+            disbursements: '/api/disbursements',
+            reports: '/api/reports',
+            tracking: '/api/tracking',
+            webhooks: '/api/webhooks'
+          }
+        }
+      };
+    });
+
+    // Health check
+    fastify.get('/health', async (request, reply) => {
+      return {
+        status: 'healthy',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+        memory: process.memoryUsage()
+      };
+    });
+
     // Register routes
     await fastify.register(applicationRoutes, { prefix: '/api/applications' });
     await fastify.register(scoringRoutes, { prefix: '/api/scoring' });
