@@ -41,7 +41,13 @@ export class UserService {
   }
 
   private generateApprovalToken(uid: string, action: 'approve' | 'reject'): string {
-    return jwt.sign({ uid, action }, config.jwt.secret, { expiresIn: '7d' });
+    console.log('🔧 Generando token para:', { uid, action });
+    console.log('🔑 Usando JWT Secret:', config.jwt.secret ? 'SÍ' : 'NO');
+    
+    const token = jwt.sign({ uid, action }, config.jwt.secret, { expiresIn: '7d' });
+    console.log('✅ Token generado:', token.substring(0, 20) + '...');
+    
+    return token;
   }
 
   async sendApprovalEmail(uid: string, email: string, displayName?: string) {
@@ -177,7 +183,13 @@ Sistema CREDITO-EXPRESS
 
   async handleApprovalToken(token: string): Promise<{ success: boolean; message: string }> {
     try {
+      console.log('🔍 Procesando token:', token.substring(0, 20) + '...');
+      console.log('🔑 JWT Secret configurado:', config.jwt.secret ? 'SÍ' : 'NO');
+      console.log('🔑 JWT Secret length:', config.jwt.secret?.length || 0);
+      
       const decoded = jwt.verify(token, config.jwt.secret) as { uid: string; action: 'approve' | 'reject' };
+      console.log('✅ Token decodificado exitosamente:', { uid: decoded.uid, action: decoded.action });
+      
       if (decoded.action === 'approve') {
         await this.approveUser(decoded.uid);
         return { success: true, message: 'Usuario aprobado exitosamente.' };
@@ -186,8 +198,10 @@ Sistema CREDITO-EXPRESS
         return { success: true, message: 'Usuario rechazado exitosamente.' };
       }
       throw new Error('Acción inválida');
-    } catch (error) {
-      return { success: false, message: 'Token inválido o expirado.' };
+    } catch (error: any) {
+      console.error('❌ Error procesando token:', error.message);
+      console.error('❌ Error completo:', error);
+      return { success: false, message: `Token inválido o expirado: ${error.message}` };
     }
   }
 }
