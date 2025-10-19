@@ -36,39 +36,43 @@ async function start() {
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     });
 
-    // Swagger Documentation
-    await fastify.register(swagger, {
-      openapi: {
-        info: {
-          title: 'Microfinance API',
-          description: 'API para sistema de microfinanzas',
-          version: '1.0.0',
-        },
-        servers: [
-          {
-            url: `http://localhost:${config.port}`,
-            description: 'Development server',
+    // Swagger Documentation - Only in development
+    if (config.nodeEnv !== 'production') {
+      await fastify.register(swagger, {
+        openapi: {
+          info: {
+            title: 'Microfinance API',
+            description: 'API para sistema de microfinanzas',
+            version: '1.0.0',
           },
-        ],
-        components: {
-          securitySchemes: {
-            bearerAuth: {
-              type: 'http',
-              scheme: 'bearer',
-              bearerFormat: 'JWT',
+          servers: [
+            {
+              url: `http://localhost:${config.port}`,
+              description: 'Development server',
+            },
+          ],
+          components: {
+            securitySchemes: {
+              bearerAuth: {
+                type: 'http',
+                scheme: 'bearer',
+                bearerFormat: 'JWT',
+              },
             },
           },
         },
-      },
-    });
+      });
 
-    await fastify.register(swaggerUi, {
-      routePrefix: '/docs',
-      uiConfig: {
-        docExpansion: 'list',
-        deepLinking: false,
-      },
-    });
+      await fastify.register(swaggerUi, {
+        routePrefix: '/docs',
+        uiConfig: {
+          docExpansion: 'list',
+          deepLinking: false,
+        },
+        staticCSP: true,
+        transformStaticCSP: (header) => header,
+      });
+    }
 
     // Auth test endpoint
     fastify.get('/api/auth/test', {
@@ -100,6 +104,12 @@ async function start() {
     // Root route - API info
     fastify.get('/', async (request, reply) => {
       reply.type('text/html');
+      const docsLink = config.nodeEnv !== 'production' ? `
+      <a href="/docs" class="link">
+        <span class="link-title">📚 API Documentation</span>
+        <span class="link-desc">Swagger UI - Explora todos los endpoints</span>
+      </a>` : '';
+      
       return `
 <!DOCTYPE html>
 <html lang="es">
@@ -145,6 +155,15 @@ async function start() {
       font-size: 0.9em;
       margin-bottom: 30px;
     }
+    .env {
+      display: inline-block;
+      background: ${config.nodeEnv === 'production' ? '#ef4444' : '#f59e0b'};
+      color: white;
+      padding: 5px 15px;
+      border-radius: 20px;
+      font-size: 0.9em;
+      margin-left: 10px;
+    }
     .links {
       display: grid;
       gap: 15px;
@@ -186,26 +205,19 @@ async function start() {
     <h1>🚀 CreditoExpress API</h1>
     <div class="version">v1.0.0</div>
     <span class="status">✓ Running</span>
+    <span class="env">${config.nodeEnv.toUpperCase()}</span>
     
     <div class="links">
-      <a href="/docs" class="link">
-        <span class="link-title">📚 API Documentation</span>
-        <span class="link-desc">Swagger UI - Explora todos los endpoints</span>
-      </a>
+      ${docsLink}
       
       <a href="/health" class="link">
         <span class="link-title">💚 Health Check</span>
         <span class="link-desc">Estado del servidor y métricas</span>
       </a>
       
-      <a href="/api/applications" class="link">
-        <span class="link-title">📝 Applications</span>
-        <span class="link-desc">Gestión de solicitudes de crédito</span>
-      </a>
-      
-      <a href="/api/reports" class="link">
-        <span class="link-title">📊 Reports</span>
-        <span class="link-desc">Reportes y estadísticas</span>
+      <a href="/api/users/approve?token=test" class="link">
+        <span class="link-title">👤 User Management</span>
+        <span class="link-desc">Gestión de usuarios y aprobaciones</span>
       </a>
     </div>
     
