@@ -26,6 +26,10 @@ const fastify = Fastify({
 
 async function start() {
   try {
+    // Environment detection for Swagger UI
+    const isVercel = process.env.VERCEL === '1' || process.env.VERCEL_ENV;
+    const isProduction = config.nodeEnv === 'production';
+    const shouldEnableSwagger = !isVercel && !isProduction && config.nodeEnv === 'development';
 
     // CORS
     await fastify.register(cors, {
@@ -36,42 +40,52 @@ async function start() {
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     });
 
-    // Swagger Documentation - Only in development
-    if (config.nodeEnv !== 'production') {
-      await fastify.register(swagger, {
-        openapi: {
-          info: {
-            title: 'Microfinance API',
-            description: 'API para sistema de microfinanzas',
-            version: '1.0.0',
-          },
-          servers: [
-            {
-              url: `http://localhost:${config.port}`,
-              description: 'Development server',
+    // Swagger Documentation - Only in local development
+    // Disable completely in Vercel or production environments
+
+    if (shouldEnableSwagger) {
+      try {
+        await fastify.register(swagger, {
+          openapi: {
+            info: {
+              title: 'Microfinance API',
+              description: 'API para sistema de microfinanzas',
+              version: '1.0.0',
             },
-          ],
-          components: {
-            securitySchemes: {
-              bearerAuth: {
-                type: 'http',
-                scheme: 'bearer',
-                bearerFormat: 'JWT',
+            servers: [
+              {
+                url: `http://localhost:${config.port}`,
+                description: 'Development server',
+              },
+            ],
+            components: {
+              securitySchemes: {
+                bearerAuth: {
+                  type: 'http',
+                  scheme: 'bearer',
+                  bearerFormat: 'JWT',
+                },
               },
             },
           },
-        },
-      });
+        });
 
-      await fastify.register(swaggerUi, {
-        routePrefix: '/docs',
-        uiConfig: {
-          docExpansion: 'list',
-          deepLinking: false,
-        },
-        staticCSP: true,
-        transformStaticCSP: (header) => header,
-      });
+        await fastify.register(swaggerUi, {
+          routePrefix: '/docs',
+          uiConfig: {
+            docExpansion: 'list',
+            deepLinking: false,
+          },
+          staticCSP: true,
+          transformStaticCSP: (header) => header,
+        });
+        
+        console.log('✅ Swagger UI enabled for local development');
+      } catch (error) {
+        console.warn('⚠️ Failed to register Swagger UI:', error);
+      }
+    } else {
+      console.log('ℹ️ Swagger UI disabled (production/Vercel environment)');
     }
 
     // Auth test endpoint
@@ -104,7 +118,7 @@ async function start() {
     // Root route - API info
     fastify.get('/', async (request, reply) => {
       reply.type('text/html');
-      const docsLink = config.nodeEnv !== 'production' ? `
+      const docsLink = shouldEnableSwagger ? `
       <a href="/docs" class="link">
         <span class="link-title">📚 API Documentation</span>
         <span class="link-desc">Swagger UI - Explora todos los endpoints</span>
