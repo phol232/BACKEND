@@ -155,22 +155,38 @@ Sistema CREDITO-EXPRESS
   }
 
   async approveUser(uid: string) {
+    console.log('🔍 Buscando usuario para aprobar:', uid);
     const user = await this.getUser(uid);
-    if (!user || user.status !== 'pending') {
-      throw new Error('User not found or not pending');
+    console.log('👤 Usuario encontrado:', user ? { uid: user.uid, email: user.email, status: user.status } : 'NO ENCONTRADO');
+    
+    if (!user) {
+      throw new Error(`Usuario no encontrado: ${uid}`);
+    }
+    
+    if (user.status !== 'pending') {
+      throw new Error(`Usuario no está pendiente. Estado actual: ${user.status}`);
     }
 
+    console.log('✅ Aprobando usuario:', uid);
     await db().collection('users').doc(uid).update({
       status: 'approved',
       approvedAt: admin.firestore.Timestamp.fromDate(new Date()),
       updatedAt: admin.firestore.Timestamp.fromDate(new Date()),
     });
+    console.log('✅ Usuario aprobado exitosamente:', uid);
   }
 
   async rejectUser(uid: string, reason?: string) {
+    console.log('🔍 Buscando usuario para rechazar:', uid);
     const user = await this.getUser(uid);
-    if (!user || user.status !== 'pending') {
-      throw new Error('User not found or not pending');
+    console.log('👤 Usuario encontrado:', user ? { uid: user.uid, email: user.email, status: user.status } : 'NO ENCONTRADO');
+    
+    if (!user) {
+      throw new Error(`Usuario no encontrado: ${uid}`);
+    }
+    
+    if (user.status !== 'pending') {
+      throw new Error(`Usuario no está pendiente. Estado actual: ${user.status}`);
     }
 
     await db().collection('users').doc(uid).update({
