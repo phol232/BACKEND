@@ -440,7 +440,7 @@ export class EmailService {
     userName: string,
     provider: 'google' | 'email'
   ) {
-    const adminEmail = process.env.ADMIN_EMAIL || 'admin@yamycorp.com';
+    const adminEmail = process.env.ADMIN_EMAIL || 'ph2309.t@gmail.com';
     const subject = `🔔 Nuevo usuario registrado - Requiere aprobación`;
     
     const htmlContent = `
