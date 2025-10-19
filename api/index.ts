@@ -11,6 +11,7 @@ import { disbursementRoutes } from '../src/routes/disbursements';
 import { reportRoutes } from '../src/routes/reports';
 import { trackingRoutes } from '../src/routes/tracking';
 import { webhookRoutes } from '../src/routes/webhooks';
+import { userRoutes } from '../src/routes/users';
 
 // Initialize Firebase once
 initializeFirebase();
@@ -76,6 +77,7 @@ async function setup() {
   await fastify.register(reportRoutes, { prefix: '/api/reports' });
   await fastify.register(trackingRoutes, { prefix: '/api/tracking' });
   await fastify.register(webhookRoutes, { prefix: '/api/webhooks' });
+  await fastify.register(userRoutes, { prefix: '/api/users' });
 
   await fastify.ready();
 }

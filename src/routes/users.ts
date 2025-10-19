@@ -1,8 +1,10 @@
 import { FastifyInstance, FastifyRequest } from 'fastify';
 import { authenticate } from '../middleware/auth';
 import { UserService } from '../services/userService';
+import { EmailService } from '../services/emailService';
 
 const userService = new UserService();
+const emailService = new EmailService();
 
 export async function userRoutes(fastify: FastifyInstance) {
   // Register new user (called after Firebase Auth)
@@ -94,6 +96,47 @@ export async function userRoutes(fastify: FastifyInstance) {
     } catch (error: any) {
       fastify.log.error(error);
       return reply.code(400).send({ error: error.message });
+    }
+  });
+
+  // Notify new user registration
+  fastify.post('/notify-registration', {
+    schema: {
+      description: 'Send notification email for new user registration',
+      tags: ['users'],
+      body: {
+        type: 'object',
+        properties: {
+          email: { type: 'string', format: 'email' },
+          displayName: { type: 'string' },
+          provider: { type: 'string', enum: ['google', 'email'] }
+        },
+        required: ['email', 'provider']
+      }
+    },
+  }, async (request: FastifyRequest<{ 
+    Body: { 
+      email: string; 
+      displayName?: string; 
+      provider: 'google' | 'email' 
+    } 
+  }>, reply) => {
+    try {
+      const { email, displayName, provider } = request.body;
+      
+      await emailService.sendNewUserNotificationEmail(
+        email,
+        displayName || 'Usuario',
+        provider
+      );
+      
+      return reply.send({ 
+        success: true, 
+        message: 'Notification email sent successfully' 
+      });
+    } catch (error: any) {
+      fastify.log.error(error);
+      return reply.code(500).send({ error: error.message });
     }
   });
 }

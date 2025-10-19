@@ -434,4 +434,91 @@ export class EmailService {
       textContent,
     });
   }
+
+  async sendNewUserNotificationEmail(
+    userEmail: string,
+    userName: string,
+    provider: 'google' | 'email'
+  ) {
+    const adminEmail = process.env.ADMIN_EMAIL || 'admin@yamycorp.com';
+    const subject = `🔔 Nuevo usuario registrado - Requiere aprobación`;
+    
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Nuevo Usuario Registrado</title>
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background: linear-gradient(135deg, #ff7b7b 0%, #667eea 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+          .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+          .user-info { background: white; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #ff7b7b; }
+          .provider-badge { display: inline-block; background: #667eea; color: white; padding: 5px 15px; border-radius: 20px; font-size: 12px; text-transform: uppercase; }
+          .footer { text-align: center; margin-top: 30px; color: #666; font-size: 14px; }
+          .button { display: inline-block; background: #4CAF50; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>🔔 Nuevo Usuario Registrado</h1>
+          </div>
+          <div class="content">
+            <p>Se ha registrado un nuevo usuario en la plataforma y requiere tu aprobación para acceder al sistema.</p>
+            
+            <div class="user-info">
+              <h3>👤 Información del Usuario:</h3>
+              <p><strong>📧 Email:</strong> ${userEmail}</p>
+              <p><strong>👤 Nombre:</strong> ${userName || 'No especificado'}</p>
+              <p><strong>🔐 Método de registro:</strong> <span class="provider-badge">${provider === 'google' ? 'Google' : 'Email'}</span></p>
+              <p><strong>📅 Fecha de registro:</strong> ${new Date().toLocaleDateString('es-PE', { 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+              })}</p>
+            </div>
+
+            <p><strong>⚠️ Acción requerida:</strong> El usuario está en estado "pendiente" y no puede acceder a la aplicación hasta que apruebes su registro.</p>
+
+            <p>Para aprobar o rechazar este usuario, accede al panel de administración de la plataforma.</p>
+
+            <div class="footer">
+              <p>Este es un email automático del sistema de CREDITO-EXPRESS.</p>
+            </div>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    const textContent = `
+Nuevo Usuario Registrado - Requiere Aprobación
+
+Se ha registrado un nuevo usuario en la plataforma:
+
+Información del Usuario:
+- Email: ${userEmail}
+- Nombre: ${userName || 'No especificado'}
+- Método de registro: ${provider === 'google' ? 'Google' : 'Email'}
+- Fecha: ${new Date().toLocaleDateString('es-PE')}
+
+El usuario está en estado "pendiente" y requiere tu aprobación para acceder.
+
+Accede al panel de administración para aprobar o rechazar este registro.
+
+Sistema CREDITO-EXPRESS
+    `;
+
+    return this.sendEmail({
+      to: adminEmail,
+      subject,
+      htmlContent,
+      textContent,
+    });
+  }
 }
