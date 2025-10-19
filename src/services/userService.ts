@@ -49,23 +49,102 @@ export class UserService {
     const approveToken = this.generateApprovalToken(uid, 'approve');
     const rejectToken = this.generateApprovalToken(uid, 'reject');
 
-    const baseUrl = process.env.SERVER_URL || `http://localhost:${config.port}`;
+    const baseUrl = process.env.SERVER_URL || 'https://backend-eight-zeta-41.vercel.app';
     const approveLink = `${baseUrl}/api/users/approve?token=${approveToken}`;
     const rejectLink = `${baseUrl}/api/users/reject?token=${rejectToken}`;
 
     const htmlContent = `
-      <h1>Nuevo Usuario Pendiente</h1>
-      <p>El usuario ${name} (${email}) solicita acceso a la microfinanciera.</p>
-      <a href="${approveLink}">Aprobar</a>
-      <a href="${rejectLink}">Rechazar</a>
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Nuevo Usuario Registrado</title>
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background: linear-gradient(135deg, #ff7b7b 0%, #667eea 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+          .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+          .user-info { background: white; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #ff7b7b; }
+          .provider-badge { display: inline-block; background: #667eea; color: white; padding: 5px 15px; border-radius: 20px; font-size: 12px; text-transform: uppercase; }
+          .footer { text-align: center; margin-top: 30px; color: #666; font-size: 14px; }
+          .action-buttons { text-align: center; margin: 30px 0; }
+          .btn { display: inline-block; padding: 15px 30px; margin: 0 10px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px; transition: all 0.3s ease; }
+          .btn-approve { background: #4CAF50; color: white; }
+          .btn-approve:hover { background: #45a049; }
+          .btn-reject { background: #f44336; color: white; }
+          .btn-reject:hover { background: #da190b; }
+          .warning { background: #fff3cd; border: 1px solid #ffeaa7; color: #856404; padding: 15px; border-radius: 8px; margin: 20px 0; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>🔔 Nuevo Usuario Registrado</h1>
+          </div>
+          <div class="content">
+            <p>Se ha registrado un nuevo usuario en la plataforma y requiere tu aprobación para acceder al sistema.</p>
+            
+            <div class="user-info">
+              <h3>👤 Información del Usuario:</h3>
+              <p><strong>📧 Email:</strong> ${email}</p>
+              <p><strong>👤 Nombre:</strong> ${name}</p>
+              <p><strong>📅 Fecha de registro:</strong> ${new Date().toLocaleDateString('es-PE', { 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+              })}</p>
+            </div>
+
+            <div class="warning">
+              <p><strong>⚠️ Acción requerida:</strong> El usuario está en estado "pendiente" y no puede acceder a la aplicación hasta que apruebes su registro.</p>
+            </div>
+
+            <div class="action-buttons">
+              <a href="${approveLink}" class="btn btn-approve">✅ Aprobar Usuario</a>
+              <a href="${rejectLink}" class="btn btn-reject">❌ Rechazar Usuario</a>
+            </div>
+
+            <div class="footer">
+              <p>Este es un email automático del sistema de CREDITO-EXPRESS.</p>
+              <p style="font-size: 12px; color: #999;">Los enlaces de aprobación/rechazo expiran en 7 días.</p>
+            </div>
+          </div>
+        </div>
+      </body>
+      </html>
     `;
 
+    const textContent = `
+Nuevo Usuario Registrado - Requiere Aprobación
+
+Se ha registrado un nuevo usuario en la plataforma:
+
+Información del Usuario:
+- Email: ${email}
+- Nombre: ${name}
+- Fecha: ${new Date().toLocaleDateString('es-PE')}
+
+El usuario está en estado "pendiente" y requiere tu aprobación para acceder.
+
+ACCIONES DISPONIBLES:
+- Aprobar: ${approveLink}
+- Rechazar: ${rejectLink}
+
+Los enlaces expiran en 7 días.
+
+Sistema CREDITO-EXPRESS
+    `;
+
+    const adminEmail = process.env.ADMIN_EMAIL || 'ph2309.t@gmail.com';
     await emailService.sendEmail({
-      to: 'ph2309.t@gmail.com',
-      toName: 'Admin',
-      subject: 'Nuevo Usuario Pendiente de Aprobación',
+      to: adminEmail,
+      toName: 'Administrador',
+      subject: '🔔 Nuevo usuario registrado - Requiere aprobación',
       htmlContent,
-      textContent: `Nuevo usuario: ${name} (${email}). Aprobar: ${approveLink}, Rechazar: ${rejectLink}`,
+      textContent,
     });
   }
 

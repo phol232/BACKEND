@@ -109,30 +109,29 @@ export async function userRoutes(fastify: FastifyInstance) {
         properties: {
           email: { type: 'string', format: 'email' },
           displayName: { type: 'string' },
-          provider: { type: 'string', enum: ['google', 'email'] }
+          provider: { type: 'string', enum: ['google', 'email'] },
+          uid: { type: 'string' }
         },
-        required: ['email', 'provider']
+        required: ['email', 'provider', 'uid']
       }
     },
   }, async (request: FastifyRequest<{ 
     Body: { 
       email: string; 
       displayName?: string; 
-      provider: 'google' | 'email' 
+      provider: 'google' | 'email';
+      uid: string;
     } 
   }>, reply) => {
     try {
-      const { email, displayName, provider } = request.body;
+      const { email, displayName, provider, uid } = request.body;
       
-      await emailService.sendNewUserNotificationEmail(
-        email,
-        displayName || 'Usuario',
-        provider
-      );
+      // Usar sendApprovalEmail que incluye los botones de aprobación/rechazo
+      await userService.sendApprovalEmail(uid, email, displayName);
       
       return reply.send({ 
         success: true, 
-        message: 'Notification email sent successfully' 
+        message: 'Approval email sent successfully' 
       });
     } catch (error: any) {
       fastify.log.error(error);
