@@ -235,6 +235,106 @@ Sistema CREDITO-EXPRESS
     }
   }
 
+  async sendApprovalConfirmationEmail(uid: string, email: string, displayName?: string) {
+    try {
+      const userName = displayName || email.split('@')[0];
+      
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Cuenta Aprobada - Microfinanciera</title>
+          <style>
+            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
+            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+            .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+            .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+            .success-icon { font-size: 48px; margin-bottom: 20px; }
+            .button { display: inline-block; background: #28a745; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+            .footer { text-align: center; margin-top: 30px; color: #666; font-size: 14px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <div class="success-icon">✅</div>
+              <h1>¡Cuenta Aprobada!</h1>
+            </div>
+            <div class="content">
+              <h2>¡Hola ${userName}!</h2>
+              <p>¡Excelentes noticias! Tu cuenta ha sido <strong>aprobada exitosamente</strong> por nuestro equipo de administración.</p>
+              
+              <p>Ya puedes acceder a todas las funcionalidades de la aplicación:</p>
+              <ul>
+                <li>✅ Ver préstamos</li>
+                <li>✅ Ver historial solicitudes</li>
+                <li>✅ Reportes</li>
+                <li>✅ Configuracion</li>
+              </ul>
+              
+              <p>Para comenzar, simplemente inicia sesión en la aplicación móvil con tu cuenta:</p>
+              <p><strong>Email:</strong> ${email}</p>
+              
+              <div style="text-align: center; margin: 30px 0;">
+                <p>¡Bienvenido a nuestra plataforma de microfinanzas!</p>
+              </div>
+              
+              <p>Si tienes alguna pregunta o necesitas ayuda, no dudes en contactarnos.</p>
+              
+              <p>Saludos cordiales,<br>
+              <strong>Equipo de Microfinanciera</strong></p>
+            </div>
+            <div class="footer">
+              <p>Este es un email automático, por favor no respondas a este mensaje.</p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `;
+
+      const textContent = `
+¡Cuenta Aprobada!
+
+¡Hola ${userName}!
+
+¡Excelentes noticias! Tu cuenta ha sido aprobada exitosamente por nuestro equipo de administración.
+
+Ya puedes acceder a todas las funcionalidades de la aplicación:
+- Solicitar préstamos
+- Ver tu historial crediticio
+- Gestionar tus pagos
+- Acceder a reportes personalizados
+
+Para comenzar, simplemente inicia sesión en la aplicación móvil con tu cuenta:
+Email: ${email}
+
+¡Bienvenido a nuestra plataforma de microfinanzas!
+
+Si tienes alguna pregunta o necesitas ayuda, no dudes en contactarnos.
+
+Saludos cordiales,
+Equipo de Microfinanciera
+
+---
+Este es un email automático, por favor no respondas a este mensaje.
+      `;
+
+      await emailService.sendEmail({
+        to: email,
+        subject: '✅ ¡Tu cuenta ha sido aprobada! - Microfinanciera',
+        htmlContent,
+        textContent,
+      });
+
+      console.log('✅ Email de confirmación de aprobación enviado a:', email);
+    } catch (error) {
+      console.error('❌ Error enviando email de confirmación de aprobación:', error);
+      // No lanzamos el error para que no falle la aprobación si hay problemas con el email
+    }
+  }
+
   async approveUser(uid: string) {
     console.log('🔍 Buscando usuario para aprobar:', uid);
     const user = await this.getUser(uid);
@@ -261,6 +361,11 @@ Sistema CREDITO-EXPRESS
       approvedAt: admin.firestore.Timestamp.fromDate(new Date()),
       updatedAt: admin.firestore.Timestamp.fromDate(new Date()),
     });
+    
+    // Enviar email de confirmación de aprobación
+    console.log('📧 Enviando email de confirmación de aprobación...');
+    await this.sendApprovalConfirmationEmail(uid, user.email, user.displayName);
+    
     console.log('✅ Usuario aprobado exitosamente:', uid);
   }
 
