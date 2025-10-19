@@ -163,6 +163,16 @@ Sistema CREDITO-EXPRESS
       throw new Error(`Usuario no encontrado: ${uid}`);
     }
     
+    // Si el usuario no tiene status definido, lo consideramos como pending (usuarios legacy)
+    if (user.status === undefined || user.status === null) {
+      console.log('⚠️ Usuario sin status definido, estableciendo como pending (usuario legacy)');
+      await db().collection('users').doc(uid).update({
+        status: 'pending',
+        updatedAt: admin.firestore.Timestamp.fromDate(new Date()),
+      });
+      user.status = 'pending'; // Actualizamos el objeto local
+    }
+    
     if (user.status !== 'pending') {
       throw new Error(`Usuario no está pendiente. Estado actual: ${user.status}`);
     }
@@ -183,6 +193,16 @@ Sistema CREDITO-EXPRESS
     
     if (!user) {
       throw new Error(`Usuario no encontrado: ${uid}`);
+    }
+    
+    // Si el usuario no tiene status definido, lo consideramos como pending (usuarios legacy)
+    if (user.status === undefined || user.status === null) {
+      console.log('⚠️ Usuario sin status definido, estableciendo como pending (usuario legacy)');
+      await db().collection('users').doc(uid).update({
+        status: 'pending',
+        updatedAt: admin.firestore.Timestamp.fromDate(new Date()),
+      });
+      user.status = 'pending'; // Actualizamos el objeto local
     }
     
     if (user.status !== 'pending') {
