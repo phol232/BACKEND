@@ -68,10 +68,74 @@ export async function userRoutes(fastify: FastifyInstance) {
     const { token } = request.query as { token: string };
     try {
       const result = await userService.handleApprovalToken(token);
-      return reply.send(result);
+      
+      const htmlResponse = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Resultado de Aprobación</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
+            .container { max-width: 600px; margin: 0 auto; background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); text-align: center; }
+            .success { color: #4CAF50; }
+            .error { color: #f44336; }
+            .icon { font-size: 48px; margin-bottom: 20px; }
+            h1 { margin-bottom: 20px; }
+            p { font-size: 16px; line-height: 1.6; color: #666; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            ${result.success ? 
+              `<div class="success">
+                <div class="icon">✅</div>
+                <h1>Usuario Aprobado</h1>
+                <p>${result.message}</p>
+                <p>El usuario ahora puede acceder a la aplicación.</p>
+              </div>` :
+              `<div class="error">
+                <div class="icon">❌</div>
+                <h1>Error</h1>
+                <p>${result.message}</p>
+                <p>Por favor, verifica que el enlace sea válido y no haya expirado.</p>
+              </div>`
+            }
+          </div>
+        </body>
+        </html>
+      `;
+      
+      return reply.type('text/html').send(htmlResponse);
     } catch (error: any) {
       fastify.log.error(error);
-      return reply.code(400).send({ error: error.message });
+      const errorHtml = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Error</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
+            .container { max-width: 600px; margin: 0 auto; background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); text-align: center; }
+            .error { color: #f44336; }
+            .icon { font-size: 48px; margin-bottom: 20px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="error">
+              <div class="icon">❌</div>
+              <h1>Error</h1>
+              <p>Ocurrió un error al procesar la solicitud.</p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `;
+      return reply.code(400).type('text/html').send(errorHtml);
     }
   });
 
@@ -92,10 +156,74 @@ export async function userRoutes(fastify: FastifyInstance) {
     const { token } = request.query as { token: string };
     try {
       const result = await userService.handleApprovalToken(token);
-      return reply.send(result);
+      
+      const htmlResponse = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Resultado de Rechazo</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
+            .container { max-width: 600px; margin: 0 auto; background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); text-align: center; }
+            .success { color: #4CAF50; }
+            .error { color: #f44336; }
+            .icon { font-size: 48px; margin-bottom: 20px; }
+            h1 { margin-bottom: 20px; }
+            p { font-size: 16px; line-height: 1.6; color: #666; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            ${result.success ? 
+              `<div class="success">
+                <div class="icon">🚫</div>
+                <h1>Usuario Rechazado</h1>
+                <p>${result.message}</p>
+                <p>El usuario ha sido notificado de la decisión.</p>
+              </div>` :
+              `<div class="error">
+                <div class="icon">❌</div>
+                <h1>Error</h1>
+                <p>${result.message}</p>
+                <p>Por favor, verifica que el enlace sea válido y no haya expirado.</p>
+              </div>`
+            }
+          </div>
+        </body>
+        </html>
+      `;
+      
+      return reply.type('text/html').send(htmlResponse);
     } catch (error: any) {
       fastify.log.error(error);
-      return reply.code(400).send({ error: error.message });
+      const errorHtml = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Error</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
+            .container { max-width: 600px; margin: 0 auto; background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); text-align: center; }
+            .error { color: #f44336; }
+            .icon { font-size: 48px; margin-bottom: 20px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="error">
+              <div class="icon">❌</div>
+              <h1>Error</h1>
+              <p>Ocurrió un error al procesar la solicitud.</p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `;
+      return reply.code(400).type('text/html').send(errorHtml);
     }
   });
 
