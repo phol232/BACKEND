@@ -9,7 +9,10 @@
     "start": "node dist/server.js",
     "vercel-build": "echo 'Building for Vercel...'",
     "lint": "eslint src --ext .ts",
-    "test": "jest"
+    "test": "jest",
+    "seed:products": "tsx scripts/seed-products.ts",
+    "seed:test": "tsx scripts/seed-test-data.ts",
+    "migrate:products": "tsx scripts/migrate-add-products.ts"
   },
   "keywords": ["fastify", "typescript", "microfinance"],
   "author": "",

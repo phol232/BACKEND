@@ -45,6 +45,6 @@ export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
   minTermMonths: 6,
   maxTermMonths: 36,
   minAge: 18,
-  maxDebtToIncomeRatio: 0.50, // 50% es el límite recomendado
+  maxDebtToIncomeRatio: 0.50, 
 };
 

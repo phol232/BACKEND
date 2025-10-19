@@ -4,6 +4,7 @@ import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 import { config } from './config';
 import { initializeFirebase } from './config/firebase';
+import { userRoutes } from './routes/users';
 
 // Initialize Firebase BEFORE importing routes
 initializeFirebase();
@@ -235,6 +236,7 @@ async function start() {
     await fastify.register(reportRoutes, { prefix: '/api/reports' });
     await fastify.register(trackingRoutes, { prefix: '/api/tracking' });
     await fastify.register(webhookRoutes, { prefix: '/api/webhooks' });
+    await fastify.register(userRoutes, { prefix: '/api/users' });
 
     // Start server
     await fastify.listen({ port: config.port, host: '0.0.0.0' });
