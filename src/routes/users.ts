@@ -254,12 +254,29 @@ export async function userRoutes(fastify: FastifyInstance) {
     try {
       const { email, displayName, provider, uid } = request.body;
       
-      // Usar sendApprovalEmail que incluye los botones de aprobación/rechazo
-      await userService.sendApprovalEmail(uid, email, displayName);
+      console.log('📧 Notificación de registro recibida:', { uid, email, displayName, provider });
+      
+      // Verificar si el usuario ya existe
+      const existingUser = await userService.getUser(uid);
+      if (existingUser) {
+        console.log('✅ Usuario ya existe, enviando email de notificación');
+        await userService.sendApprovalEmail(uid, email, displayName);
+        return reply.send({ 
+          success: true, 
+          message: 'Approval email sent successfully',
+          user: existingUser
+        });
+      }
+      
+      // Si no existe, crear el usuario (para casos edge)
+      console.log('⚠️ Usuario no encontrado, creando en colección global como fallback');
+      const newUser = await userService.createPendingUser(uid, email, displayName, provider);
+      console.log('✅ Usuario creado en base de datos:', { uid, status: newUser.status });
       
       return reply.send({ 
         success: true, 
-        message: 'Approval email sent successfully' 
+        message: 'User created and approval email sent successfully',
+        user: newUser
       });
     } catch (error: any) {
       fastify.log.error(error);

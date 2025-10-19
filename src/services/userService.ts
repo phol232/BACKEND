@@ -9,8 +9,55 @@ const emailService = new EmailService();
 
 export class UserService {
   public async getUser(uid: string): Promise<User | null> {
-    const userDoc = await db().collection('users').doc(uid).get();
-    return userDoc.exists ? (userDoc.data() as User) : null;
+    console.log('🔍 Buscando usuario:', uid);
+    
+    // Primero intentar en la colección global (para compatibilidad)
+    const globalUserDoc = await db().collection('users').doc(uid).get();
+    if (globalUserDoc.exists) {
+      console.log('✅ Usuario encontrado en colección global');
+      return globalUserDoc.data() as User;
+    }
+
+    // Si no está en la colección global, buscar en todas las microfinancieras
+    console.log('🔍 Buscando en microfinancieras...');
+    const microfinancierasSnapshot = await db().collection('microfinancieras').get();
+    
+    for (const mfDoc of microfinancierasSnapshot.docs) {
+      const userDoc = await db()
+        .collection('microfinancieras')
+        .doc(mfDoc.id)
+        .collection('users')
+        .doc(uid)
+        .get();
+      
+      if (userDoc.exists) {
+        const userData = userDoc.data();
+        console.log('✅ Usuario encontrado en microfinanciera:', mfDoc.id);
+        
+        // Convertir el formato de microfinanciera al formato esperado por el backend
+        const user: User = {
+          uid: userData?.userId || uid,
+          email: userData?.email || '',
+          displayName: userData?.displayName,
+          photoURL: userData?.photoUrl,
+          phoneNumber: userData?.phone,
+          provider: userData?.linkedProviders?.includes('google') ? 'google' : 'email',
+          status: userData?.status || 'pending',
+          role: userData?.roles?.includes('admin') ? 'admin' : 
+                userData?.roles?.includes('agent') ? 'agent' : 'user',
+          createdAt: userData?.createdAt || admin.firestore.Timestamp.fromDate(new Date()),
+          updatedAt: userData?.updatedAt || admin.firestore.Timestamp.fromDate(new Date()),
+          approvedAt: userData?.approvedAt,
+          rejectedAt: userData?.rejectedAt,
+          rejectionReason: userData?.rejectionReason,
+        };
+        
+        return user;
+      }
+    }
+    
+    console.log('❌ Usuario no encontrado en ninguna microfinanciera');
+    return null;
   }
 
   async createPendingUser(uid: string, email: string, displayName?: string, provider: 'google' | 'email' = 'email') {
@@ -154,6 +201,40 @@ Sistema CREDITO-EXPRESS
     });
   }
 
+  private async updateUserInMicrofinanciera(uid: string, updates: any): Promise<void> {
+    // Buscar en todas las microfinancieras para encontrar y actualizar el usuario
+    const microfinancierasSnapshot = await db().collection('microfinancieras').get();
+    
+    for (const mfDoc of microfinancierasSnapshot.docs) {
+      const userDoc = await db()
+        .collection('microfinancieras')
+        .doc(mfDoc.id)
+        .collection('users')
+        .doc(uid)
+        .get();
+      
+      if (userDoc.exists) {
+        console.log('📝 Actualizando usuario en microfinanciera:', mfDoc.id);
+        await db()
+          .collection('microfinancieras')
+          .doc(mfDoc.id)
+          .collection('users')
+          .doc(uid)
+          .update(updates);
+        return;
+      }
+    }
+    
+    // Si no se encuentra en microfinancieras, intentar en la colección global
+    const globalUserDoc = await db().collection('users').doc(uid).get();
+    if (globalUserDoc.exists) {
+      console.log('📝 Actualizando usuario en colección global');
+      await db().collection('users').doc(uid).update(updates);
+    } else {
+      throw new Error(`No se pudo encontrar el usuario ${uid} para actualizar`);
+    }
+  }
+
   async approveUser(uid: string) {
     console.log('🔍 Buscando usuario para aprobar:', uid);
     const user = await this.getUser(uid);
@@ -163,22 +244,19 @@ Sistema CREDITO-EXPRESS
       throw new Error(`Usuario no encontrado: ${uid}`);
     }
     
-    // Si el usuario no tiene status definido, lo consideramos como pending (usuarios legacy)
+    // Manejar usuarios legacy sin status definido
     if (user.status === undefined || user.status === null) {
-      console.log('⚠️ Usuario sin status definido, estableciendo como pending (usuario legacy)');
-      await db().collection('users').doc(uid).update({
+      console.log('🔧 Usuario legacy sin status, estableciendo como pending primero');
+      await this.updateUserInMicrofinanciera(uid, {
         status: 'pending',
         updatedAt: admin.firestore.Timestamp.fromDate(new Date()),
       });
-      user.status = 'pending'; // Actualizamos el objeto local
-    }
-    
-    if (user.status !== 'pending') {
+    } else if (user.status !== 'pending') {
       throw new Error(`Usuario no está pendiente. Estado actual: ${user.status}`);
     }
 
     console.log('✅ Aprobando usuario:', uid);
-    await db().collection('users').doc(uid).update({
+    await this.updateUserInMicrofinanciera(uid, {
       status: 'approved',
       approvedAt: admin.firestore.Timestamp.fromDate(new Date()),
       updatedAt: admin.firestore.Timestamp.fromDate(new Date()),
@@ -195,26 +273,25 @@ Sistema CREDITO-EXPRESS
       throw new Error(`Usuario no encontrado: ${uid}`);
     }
     
-    // Si el usuario no tiene status definido, lo consideramos como pending (usuarios legacy)
+    // Manejar usuarios legacy sin status definido
     if (user.status === undefined || user.status === null) {
-      console.log('⚠️ Usuario sin status definido, estableciendo como pending (usuario legacy)');
-      await db().collection('users').doc(uid).update({
+      console.log('🔧 Usuario legacy sin status, estableciendo como pending primero');
+      await this.updateUserInMicrofinanciera(uid, {
         status: 'pending',
         updatedAt: admin.firestore.Timestamp.fromDate(new Date()),
       });
-      user.status = 'pending'; // Actualizamos el objeto local
-    }
-    
-    if (user.status !== 'pending') {
+    } else if (user.status !== 'pending') {
       throw new Error(`Usuario no está pendiente. Estado actual: ${user.status}`);
     }
 
-    await db().collection('users').doc(uid).update({
+    console.log('❌ Rechazando usuario:', uid);
+    await this.updateUserInMicrofinanciera(uid, {
       status: 'rejected',
       rejectedAt: admin.firestore.Timestamp.fromDate(new Date()),
       updatedAt: admin.firestore.Timestamp.fromDate(new Date()),
       rejectionReason: reason,
     });
+    console.log('❌ Usuario rechazado exitosamente:', uid);
   }
 
   async handleApprovalToken(token: string): Promise<{ success: boolean; message: string }> {
