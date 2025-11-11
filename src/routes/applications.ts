@@ -10,6 +10,84 @@ const validationService = new ValidationService();
 const auditService = new AuditService();
 
 export async function applicationRoutes(fastify: FastifyInstance) {
+  // Listar todas las aplicaciones con filtros
+  fastify.get<{
+    Querystring: {
+      microfinancieraId: string;
+      status?: string;
+      zone?: string;
+      productId?: string;
+      startDate?: string;
+      endDate?: string;
+      assignedUserId?: string;
+    };
+  }>(
+    '/',
+    {
+      preHandler: authenticate,
+      schema: {
+        description: 'Listar solicitudes con filtros (estado, zona, producto, fecha)',
+        tags: ['applications'],
+        security: [{ bearerAuth: [] }],
+        querystring: {
+          type: 'object',
+          required: ['microfinancieraId'],
+          properties: {
+            microfinancieraId: { type: 'string' },
+            status: { type: 'string' },
+            zone: { type: 'string' },
+            productId: { type: 'string' },
+            startDate: { type: 'string', format: 'date' },
+            endDate: { type: 'string', format: 'date' },
+            assignedUserId: { type: 'string' },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const { microfinancieraId, status, zone, productId, startDate, endDate, assignedUserId } =
+        request.query;
+
+      try {
+        let query = db()
+          .collection('microfinancieras')
+          .doc(microfinancieraId)
+          .collection('loanApplications')
+          .orderBy('createdAt', 'desc');
+
+        if (status) {
+          query = query.where('status', '==', status) as any;
+        }
+        if (zone) {
+          query = query.where('zone', '==', zone) as any;
+        }
+        if (productId) {
+          query = query.where('productId', '==', productId) as any;
+        }
+        if (assignedUserId) {
+          query = query.where('routing.agentId', '==', assignedUserId) as any;
+        }
+        if (startDate) {
+          query = query.where('createdAt', '>=', new Date(startDate)) as any;
+        }
+        if (endDate) {
+          query = query.where('createdAt', '<=', new Date(endDate)) as any;
+        }
+
+        const snapshot = await query.get();
+        const applications = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+
+        return reply.send({ applications });
+      } catch (error: any) {
+        fastify.log.error(error);
+        return reply.code(500).send({ error: error.message });
+      }
+    }
+  );
+
   // Get applications assigned to agent
   fastify.get<{
     Querystring: {
@@ -99,6 +177,89 @@ export async function applicationRoutes(fastify: FastifyInstance) {
           id: doc.id,
           ...doc.data(),
         });
+      } catch (error: any) {
+        fastify.log.error(error);
+        return reply.code(500).send({ error: error.message });
+      }
+    }
+  );
+
+  // Asignar aplicación a analista
+  fastify.post<{
+    Body: {
+      microfinancieraId: string;
+      applicationId: string;
+      analystId: string;
+    };
+  }>(
+    '/assign',
+    {
+      preHandler: authenticate,
+      schema: {
+        description: 'Asignar aplicación a analista',
+        tags: ['applications'],
+        security: [{ bearerAuth: [] }],
+        body: {
+          type: 'object',
+          required: ['microfinancieraId', 'applicationId', 'analystId'],
+          properties: {
+            microfinancieraId: { type: 'string' },
+            applicationId: { type: 'string' },
+            analystId: { type: 'string' },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const { microfinancieraId, applicationId, analystId } = request.body;
+      const user = (request as AuthenticatedRequest).user;
+
+      try {
+        const appRef = db()
+          .collection('microfinancieras')
+          .doc(microfinancieraId)
+          .collection('loanApplications')
+          .doc(applicationId);
+
+        const appDoc = await appRef.get();
+        if (!appDoc.exists) {
+          return reply.code(404).send({ error: 'Application not found' });
+        }
+
+        const currentStatus = appDoc.data()?.status;
+        if (currentStatus === 'disbursed') {
+          return reply.code(400).send({
+            error: 'No se puede asignar una aplicación ya desembolsada',
+          });
+        }
+
+        // Actualizar asignación
+        await appRef.update({
+          'routing.agentId': analystId,
+          'routing.assignedAt': new Date(),
+          assignedUserId: analystId,
+          updatedAt: new Date(),
+        });
+
+        // Si está en pending, cambiar a in_evaluation
+        if (currentStatus === 'pending' || currentStatus === 'received') {
+          await appRef.update({
+            status: 'in_evaluation',
+          });
+        }
+
+        // Audit log
+        await auditService.log(
+          user.uid,
+          'APPLICATION_ASSIGNED',
+          'loanApplication',
+          applicationId,
+          { assignedUserId: appDoc.data()?.assignedUserId },
+          { assignedUserId: analystId },
+          applicationId
+        );
+
+        return reply.send({ success: true, message: 'Aplicación asignada exitosamente' });
       } catch (error: any) {
         fastify.log.error(error);
         return reply.code(500).send({ error: error.message });

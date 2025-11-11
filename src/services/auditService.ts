@@ -1,4 +1,5 @@
-import { getFirestore, Timestamp } from "firebase-admin/firestore";
+import { db } from '../config/firebase';
+import { Timestamp } from 'firebase-admin/firestore';
 
 export interface AuditLog {
   userId: string;
@@ -10,11 +11,12 @@ export interface AuditLog {
   timestamp: Timestamp;
   correlationId: string;
   metadata?: Record<string, any>;
+  ipAddress?: string;
 }
 
 export class AuditService {
   private get db() {
-    return getFirestore();
+    return db();
   }
 
   async log(
@@ -25,7 +27,8 @@ export class AuditService {
     before: any,
     after: any,
     correlationId: string,
-    metadata?: Record<string, any>
+    metadata?: Record<string, any>,
+    ipAddress?: string
   ): Promise<void> {
     const auditLog: AuditLog = {
       userId,
@@ -36,18 +39,19 @@ export class AuditService {
       after,
       timestamp: Timestamp.now(),
       correlationId,
-      metadata,
+      ...(metadata ? { metadata } : {}),
+      ...(ipAddress ? { ipAddress } : {}),
     };
 
-    await this.db.collection("auditLogs").add(auditLog);
+    await this.db.collection('auditLogs').add(auditLog);
   }
 
   async getLogsByEntity(entityType: string, entityId: string, limit = 50): Promise<AuditLog[]> {
     const snapshot = await this.db
-      .collection("auditLogs")
-      .where("entityType", "==", entityType)
-      .where("entityId", "==", entityId)
-      .orderBy("timestamp", "desc")
+      .collection('auditLogs')
+      .where('entityType', '==', entityType)
+      .where('entityId', '==', entityId)
+      .orderBy('timestamp', 'desc')
       .limit(limit)
       .get();
 
@@ -56,9 +60,9 @@ export class AuditService {
 
   async getLogsByUser(userId: string, limit = 50): Promise<AuditLog[]> {
     const snapshot = await this.db
-      .collection("auditLogs")
-      .where("userId", "==", userId)
-      .orderBy("timestamp", "desc")
+      .collection('auditLogs')
+      .where('userId', '==', userId)
+      .orderBy('timestamp', 'desc')
       .limit(limit)
       .get();
 
@@ -71,14 +75,24 @@ export class AuditService {
     limit = 100
   ): Promise<AuditLog[]> {
     const snapshot = await this.db
-      .collection("auditLogs")
-      .where("timestamp", ">=", Timestamp.fromDate(startDate))
-      .where("timestamp", "<=", Timestamp.fromDate(endDate))
-      .orderBy("timestamp", "desc")
+      .collection('auditLogs')
+      .where('timestamp', '>=', Timestamp.fromDate(startDate))
+      .where('timestamp', '<=', Timestamp.fromDate(endDate))
+      .orderBy('timestamp', 'desc')
+      .limit(limit)
+      .get();
+
+    return snapshot.docs.map((doc) => doc.data() as AuditLog);
+  }
+
+  async getLogsByIP(ipAddress: string, limit = 50): Promise<AuditLog[]> {
+    const snapshot = await this.db
+      .collection('auditLogs')
+      .where('ipAddress', '==', ipAddress)
+      .orderBy('timestamp', 'desc')
       .limit(limit)
       .get();
 
     return snapshot.docs.map((doc) => doc.data() as AuditLog);
   }
 }
-

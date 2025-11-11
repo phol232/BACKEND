@@ -17,6 +17,9 @@ import { disbursementRoutes } from './routes/disbursements';
 import { reportRoutes } from './routes/reports';
 import { trackingRoutes } from './routes/tracking';
 import { webhookRoutes } from './routes/webhooks';
+import { accountRoutes } from './routes/accounts';
+import { cardRoutes } from './routes/cards';
+import { workerRoutes } from './routes/workers';
 
 const fastify = Fastify({
   logger: {
@@ -263,6 +266,9 @@ async function start() {
     await fastify.register(trackingRoutes, { prefix: '/api/tracking' });
     await fastify.register(webhookRoutes, { prefix: '/api/webhooks' });
     await fastify.register(userRoutes, { prefix: '/api/users' });
+    await fastify.register(accountRoutes, { prefix: '/api/accounts' });
+    await fastify.register(cardRoutes, { prefix: '/api/cards' });
+    await fastify.register(workerRoutes, { prefix: '/api/workers' });
 
     // Start server
     await fastify.listen({ port: config.port, host: '0.0.0.0' });

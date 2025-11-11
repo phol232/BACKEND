@@ -208,4 +208,200 @@ export async function scoringRoutes(fastify: FastifyInstance) {
       }
     }
   );
+
+  // Configurar umbrales y pesos del score (admin)
+  fastify.post<{
+    Body: {
+      microfinancieraId: string;
+      thresholds: {
+        approve: number;
+        reject: number;
+        condition: number;
+      };
+      weights: Record<string, number>;
+      version: string;
+    };
+  }>(
+    '/config',
+    {
+      preHandler: authenticate,
+      schema: {
+        description: 'Configurar umbrales y pesos del score (admin)',
+        tags: ['scoring'],
+        security: [{ bearerAuth: [] }],
+        body: {
+          type: 'object',
+          required: ['microfinancieraId', 'thresholds', 'weights', 'version'],
+          properties: {
+            microfinancieraId: { type: 'string' },
+            thresholds: {
+              type: 'object',
+              required: ['approve', 'reject', 'condition'],
+              properties: {
+                approve: { type: 'number' },
+                reject: { type: 'number' },
+                condition: { type: 'number' },
+              },
+            },
+            weights: { type: 'object' },
+            version: { type: 'string' },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const { microfinancieraId, thresholds, weights, version } = request.body;
+      const user = (request as AuthenticatedRequest).user;
+
+      try {
+        const configRef = db()
+          .collection('microfinancieras')
+          .doc(microfinancieraId)
+          .collection('scoringConfig')
+          .doc('current');
+
+        await configRef.set({
+          thresholds,
+          weights,
+          version,
+          updatedAt: new Date(),
+          updatedBy: user.uid,
+        });
+
+        // Guardar versión histórica
+        await db()
+          .collection('microfinancieras')
+          .doc(microfinancieraId)
+          .collection('scoringConfig')
+          .doc(`version-${version}`)
+          .set({
+            thresholds,
+            weights,
+            version,
+            createdAt: new Date(),
+            createdBy: user.uid,
+          });
+
+        return reply.send({
+          success: true,
+          message: 'Configuración de score guardada exitosamente',
+        });
+      } catch (error: any) {
+        fastify.log.error(error);
+        return reply.code(500).send({ error: error.message });
+      }
+    }
+  );
+
+  // Obtener configuración actual
+  fastify.get<{
+    Querystring: {
+      microfinancieraId: string;
+    };
+  }>(
+    '/config',
+    {
+      preHandler: authenticate,
+      schema: {
+        description: 'Obtener configuración actual de score',
+        tags: ['scoring'],
+        security: [{ bearerAuth: [] }],
+      },
+    },
+    async (request, reply) => {
+      const { microfinancieraId } = request.query;
+
+      try {
+        const configDoc = await db()
+          .collection('microfinancieras')
+          .doc(microfinancieraId)
+          .collection('scoringConfig')
+          .doc('current')
+          .get();
+
+        if (!configDoc.exists) {
+          return reply.code(404).send({ error: 'Configuración no encontrada' });
+        }
+
+        return reply.send({ config: configDoc.data() });
+      } catch (error: any) {
+        fastify.log.error(error);
+        return reply.code(500).send({ error: error.message });
+      }
+    }
+  );
+
+  // Monitorear tasa de aprobación y métricas del modelo
+  fastify.get<{
+    Querystring: {
+      microfinancieraId: string;
+      startDate?: string;
+      endDate?: string;
+    };
+  }>(
+    '/metrics',
+    {
+      preHandler: authenticate,
+      schema: {
+        description: 'Monitorear tasa de aprobación y métricas del modelo',
+        tags: ['scoring'],
+        security: [{ bearerAuth: [] }],
+      },
+    },
+    async (request, reply) => {
+      const { microfinancieraId, startDate, endDate } = request.query;
+
+      try {
+        let query = db()
+          .collection('microfinancieras')
+          .doc(microfinancieraId)
+          .collection('loanApplications')
+          .where('scoring', '!=', null);
+
+        if (startDate) {
+          query = query.where('createdAt', '>=', new Date(startDate)) as any;
+        }
+        if (endDate) {
+          query = query.where('createdAt', '<=', new Date(endDate)) as any;
+        }
+
+        const snapshot = await query.get();
+        const applications = snapshot.docs.map((doc) => doc.data());
+
+        const total = applications.length;
+        const approved = applications.filter((a) => a.status === 'approved' || a.status === 'disbursed').length;
+        const rejected = applications.filter((a) => a.status === 'rejected').length;
+        const conditioned = applications.filter((a) => a.status === 'conditioned').length;
+
+        const scores = applications
+          .map((a) => a.scoring?.totalScore || a.scoring?.score || 0)
+          .filter((s) => s > 0);
+
+        const avgScore = scores.length > 0
+          ? scores.reduce((a, b) => a + b, 0) / scores.length
+          : 0;
+
+        const metrics = {
+          totalApplications: total,
+          approved: approved,
+          rejected: rejected,
+          conditioned: conditioned,
+          approvalRate: total > 0 ? (approved / total) * 100 : 0,
+          rejectionRate: total > 0 ? (rejected / total) * 100 : 0,
+          averageScore: avgScore,
+          minScore: scores.length > 0 ? Math.min(...scores) : 0,
+          maxScore: scores.length > 0 ? Math.max(...scores) : 0,
+          period: {
+            startDate: startDate || null,
+            endDate: endDate || null,
+          },
+        };
+
+        return reply.send({ metrics });
+      } catch (error: any) {
+        fastify.log.error(error);
+        return reply.code(500).send({ error: error.message });
+      }
+    }
+  );
 }
