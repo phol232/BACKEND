@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify';
+import { QueryDocumentSnapshot, DocumentData } from 'firebase-admin/firestore';
 import { authenticate, AuthenticatedRequest } from '../middleware/auth';
 import { RoutingService } from '../services/routingService';
 import { ValidationService } from '../services/validationService';
@@ -44,12 +45,13 @@ export async function applicationRoutes(fastify: FastifyInstance) {
         },
       },
     },
-    async (request: AuthenticatedRequest, reply) => {
+    async (request, reply) => {
       const { microfinancieraId, status, zone, productId, startDate, endDate, assignedUserId } =
         request.query;
 
       try {
-        const user = request.user;
+        const authRequest = request as AuthenticatedRequest;
+        const user = authRequest.user;
         
         let query: any = db()
           .collection('microfinancieras')
@@ -85,7 +87,7 @@ export async function applicationRoutes(fastify: FastifyInstance) {
         query = query.orderBy('createdAt', 'desc');
 
         const snapshot = await query.get();
-        const applications = snapshot.docs.map((doc) => ({
+        const applications = snapshot.docs.map((doc: QueryDocumentSnapshot<DocumentData>) => ({
           id: doc.id,
           ...doc.data(),
         }));
@@ -140,7 +142,7 @@ export async function applicationRoutes(fastify: FastifyInstance) {
         }
 
         const snapshot = await query.orderBy('createdAt', 'desc').get();
-        const applications = snapshot.docs.map((doc) => ({
+        const applications = snapshot.docs.map((doc: QueryDocumentSnapshot<DocumentData>) => ({
           id: doc.id,
           ...doc.data(),
         }));

@@ -23,6 +23,7 @@ export interface Card {
   dni?: string;
   email?: string;
   phone?: string;
+  displayName?: string;
   // Documentos
   documentUrl?: string; // URL del documento de identidad
   selfieUrl?: string; // URL del selfie
@@ -62,4 +63,3 @@ export interface CardMetrics {
   successfulTransactions: number;
   failedTransactions: number;
 }
-
