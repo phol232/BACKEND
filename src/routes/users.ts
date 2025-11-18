@@ -51,6 +51,28 @@ export async function userRoutes(fastify: FastifyInstance) {
     }
   });
 
+  // Get current user data (including role)
+  fastify.get('/me', {
+    preHandler: authenticate,
+    schema: {
+      description: 'Get current user data including role',
+      tags: ['users'],
+      security: [{ bearerAuth: [] }],
+    },
+  }, async (request: FastifyRequest, reply) => {
+    try {
+      const user = (request as any).user;
+      const userData = await userService.getUser(user.uid);
+      if (!userData) {
+        return reply.code(404).send({ error: 'User not found' });
+      }
+      return reply.send(userData);
+    } catch (error: any) {
+      fastify.log.error(error);
+      return reply.code(500).send({ error: error.message });
+    }
+  });
+
   // Approve user (public, token-based)
   fastify.get('/approve', {
     schema: {
@@ -238,9 +260,11 @@ export async function userRoutes(fastify: FastifyInstance) {
           email: { type: 'string', format: 'email' },
           displayName: { type: 'string' },
           provider: { type: 'string', enum: ['google', 'email'] },
-          uid: { type: 'string' }
+          uid: { type: 'string' },
+          microfinancieraId: { type: 'string' },
+          role: { type: 'string', enum: ['analyst', 'employee'] }
         },
-        required: ['email', 'provider', 'uid']
+        required: ['email', 'provider', 'uid', 'microfinancieraId']
       }
     },
   }, async (request: FastifyRequest<{ 
@@ -249,29 +273,59 @@ export async function userRoutes(fastify: FastifyInstance) {
       displayName?: string; 
       provider: 'google' | 'email';
       uid: string;
+      microfinancieraId: string;
+      role?: 'analyst' | 'employee';
     } 
   }>, reply) => {
     try {
-      const { email, displayName, provider, uid } = request.body;
+      const { email, displayName, provider, uid, microfinancieraId, role } = request.body;
       
-      console.log('📧 Notificación de registro recibida:', { uid, email, displayName, provider });
+      console.log('📧 Notificación de registro recibida:', { uid, email, displayName, provider, microfinancieraId, role });
       
-      // Verificar si el usuario ya existe
-      const existingUser = await userService.getUser(uid);
+      if (!microfinancieraId) {
+        return reply.code(400).send({ error: 'microfinancieraId is required' });
+      }
+      
+      // Verificar si el usuario ya existe en la microfinanciera
+      const existingUser = await userService.getUserInMicrofinanciera(microfinancieraId, uid);
       if (existingUser) {
-        console.log('✅ Usuario ya existe, enviando email de notificación');
-        await userService.sendApprovalEmail(uid, email, displayName);
+        console.log('✅ Usuario ya existe en microfinanciera');
+        
+        // Si el usuario ya está aprobado, no enviar emails
+        if (existingUser.status === 'approved') {
+          console.log('👍 Usuario ya aprobado, no se envían emails');
+          return reply.send({ 
+            success: true, 
+            message: 'User already approved',
+            user: existingUser
+          });
+        }
+        
+        // Si está pendiente, reenviar emails
+        if (existingUser.status === 'pending') {
+          console.log('⏳ Usuario pendiente, reenviando emails de notificación');
+          await userService.sendApprovalEmail(uid, email, displayName);
+          await userService.sendPendingConfirmationEmail(email, displayName);
+        }
+        
         return reply.send({ 
           success: true, 
-          message: 'Approval email sent successfully',
+          message: 'User status checked',
           user: existingUser
         });
       }
       
-      // Si no existe, crear el usuario (para casos edge)
-      console.log('⚠️ Usuario no encontrado, creando en colección global como fallback');
-      const newUser = await userService.createPendingUser(uid, email, displayName, provider);
-      console.log('✅ Usuario creado en base de datos:', { uid, status: newUser.status });
+      // Crear el usuario en la microfinanciera
+      console.log('🆕 Creando nuevo usuario en microfinanciera:', microfinancieraId);
+      const newUser = await userService.createPendingUserInMicrofinanciera(
+        microfinancieraId,
+        uid,
+        email,
+        displayName,
+        provider,
+        role
+      );
+      console.log('✅ Usuario creado en base de datos:', { uid, microfinancieraId, status: newUser.status });
       
       return reply.send({ 
         success: true, 

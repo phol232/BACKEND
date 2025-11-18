@@ -1,11 +1,14 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { auth } from '../config/firebase';
+import { UserService } from '../services/userService';
+
+const userService = new UserService();
 
 export interface AuthenticatedRequest extends FastifyRequest {
   user: {
     uid: string;
     email?: string;
-    role?: string;
+    role?: 'admin' | 'analyst' | 'employee';
   };
 }
 
@@ -27,12 +30,17 @@ export async function authenticate(
     const decodedToken = await auth().verifyIdToken(token);
     request.log.debug(`Token verified for user: ${decodedToken.uid}`);
     
+    // Obtener el rol del usuario desde la base de datos
+    const userData = await userService.getUser(decodedToken.uid);
+    
     // Attach user to request
     (request as AuthenticatedRequest).user = {
       uid: decodedToken.uid,
       email: decodedToken.email,
-      role: decodedToken.role,
+      role: userData?.role || 'employee', // Default to employee if no role found
     };
+    
+    request.log.debug(`User role: ${(request as AuthenticatedRequest).user.role}`);
   } catch (error: any) {
     request.log.error(`Token verification failed: ${error.message}`);
     return reply.code(401).send({ 

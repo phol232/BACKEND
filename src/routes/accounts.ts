@@ -15,6 +15,8 @@ export async function accountRoutes(fastify: FastifyInstance) {
       accountType?: 'personal' | 'business';
       startDate?: string;
       endDate?: string;
+      limit?: number;
+      page?: number;
     };
   }>(
     '/',
@@ -37,13 +39,15 @@ export async function accountRoutes(fastify: FastifyInstance) {
             accountType: { type: 'string', enum: ['personal', 'business'] },
             startDate: { type: 'string', format: 'date' },
             endDate: { type: 'string', format: 'date' },
+            limit: { type: 'number', default: 100 },
+            page: { type: 'number', default: 1 },
           },
         },
       },
     },
     async (request, reply) => {
       try {
-        const { microfinancieraId, status, zone, accountType, startDate, endDate } =
+        const { microfinancieraId, status, zone, accountType, startDate, endDate, limit = 100, page = 1 } =
           request.query;
 
         const filters: any = {};
@@ -52,9 +56,18 @@ export async function accountRoutes(fastify: FastifyInstance) {
         if (accountType) filters.accountType = accountType;
         if (startDate) filters.startDate = new Date(startDate);
         if (endDate) filters.endDate = new Date(endDate);
+        filters.limit = Math.min(limit, 500); // Máximo 500 registros
+        filters.page = page;
 
         const accounts = await accountService.getAccounts(microfinancieraId, filters);
-        return reply.send({ accounts });
+        return reply.send({ 
+          accounts,
+          pagination: {
+            page,
+            limit: filters.limit,
+            total: accounts.length,
+          }
+        });
       } catch (error: any) {
         fastify.log.error(error);
         return reply.code(500).send({ error: error.message });

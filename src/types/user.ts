@@ -8,7 +8,7 @@ export interface User {
   phoneNumber?: string;
   provider: 'google' | 'email';
   status: 'pending' | 'approved' | 'rejected';
-  role: 'user' | 'admin' | 'agent';
+  role: 'admin' | 'analyst' | 'employee';
   createdAt: Timestamp;
   updatedAt: Timestamp;
   approvedAt?: Timestamp;

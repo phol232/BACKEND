@@ -44,35 +44,45 @@ export async function applicationRoutes(fastify: FastifyInstance) {
         },
       },
     },
-    async (request, reply) => {
+    async (request: AuthenticatedRequest, reply) => {
       const { microfinancieraId, status, zone, productId, startDate, endDate, assignedUserId } =
         request.query;
 
       try {
-        let query = db()
+        const user = request.user;
+        
+        let query: any = db()
           .collection('microfinancieras')
           .doc(microfinancieraId)
-          .collection('loanApplications')
-          .orderBy('createdAt', 'desc');
+          .collection('loanApplications');
+
+        // Si el usuario es analista, solo mostrar solicitudes asignadas a él
+        if (user?.role === 'analyst') {
+          console.log('🔍 Filtrando solicitudes para analista:', user.uid);
+          query = query.where('assignedUserId', '==', user.uid);
+        } else if (assignedUserId) {
+          // Admin y employee pueden filtrar por assignedUserId si lo especifican
+          query = query.where('assignedUserId', '==', assignedUserId);
+        }
 
         if (status) {
-          query = query.where('status', '==', status) as any;
+          query = query.where('status', '==', status);
         }
         if (zone) {
-          query = query.where('zone', '==', zone) as any;
+          query = query.where('zone', '==', zone);
         }
         if (productId) {
-          query = query.where('productId', '==', productId) as any;
-        }
-        if (assignedUserId) {
-          query = query.where('routing.agentId', '==', assignedUserId) as any;
+          query = query.where('productId', '==', productId);
         }
         if (startDate) {
-          query = query.where('createdAt', '>=', new Date(startDate)) as any;
+          query = query.where('createdAt', '>=', new Date(startDate));
         }
         if (endDate) {
-          query = query.where('createdAt', '<=', new Date(endDate)) as any;
+          query = query.where('createdAt', '<=', new Date(endDate));
         }
+
+        // Ordenar por fecha de creación
+        query = query.orderBy('createdAt', 'desc');
 
         const snapshot = await query.get();
         const applications = snapshot.docs.map((doc) => ({
@@ -80,6 +90,7 @@ export async function applicationRoutes(fastify: FastifyInstance) {
           ...doc.data(),
         }));
 
+        console.log(`✅ Retornando ${applications.length} solicitudes para usuario ${user?.role}`);
         return reply.send({ applications });
       } catch (error: any) {
         fastify.log.error(error);

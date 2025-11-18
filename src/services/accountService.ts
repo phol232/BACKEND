@@ -28,6 +28,8 @@ export class AccountService {
       accountType?: 'personal' | 'business';
       startDate?: Date;
       endDate?: Date;
+      limit?: number;
+      page?: number;
     }
   ): Promise<Account[]> {
     let query = db()
@@ -49,6 +51,16 @@ export class AccountService {
     }
     if (filters?.endDate) {
       query = query.where('createdAt', '<=', Timestamp.fromDate(filters.endDate)) as any;
+    }
+
+    // Aplicar límite (default 100, máximo 500)
+    const limit = Math.min(filters?.limit || 100, 500);
+    query = query.limit(limit) as any;
+
+    // Aplicar paginación si se especifica
+    if (filters?.page && filters.page > 1) {
+      const offset = (filters.page - 1) * limit;
+      query = query.offset(offset) as any;
     }
 
     const snapshot = await query.get();

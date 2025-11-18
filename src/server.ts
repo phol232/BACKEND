@@ -20,6 +20,8 @@ import { webhookRoutes } from './routes/webhooks';
 import { accountRoutes } from './routes/accounts';
 import { cardRoutes } from './routes/cards';
 import { workerRoutes } from './routes/workers';
+import { microfinancieraRoutes } from './routes/microfinancieras';
+import { aiRoutes } from './routes/ai';
 
 const fastify = Fastify({
   logger: {
@@ -269,6 +271,8 @@ async function start() {
     await fastify.register(accountRoutes, { prefix: '/api/accounts' });
     await fastify.register(cardRoutes, { prefix: '/api/cards' });
     await fastify.register(workerRoutes, { prefix: '/api/workers' });
+    await fastify.register(microfinancieraRoutes, { prefix: '/api/microfinancieras' });
+    await fastify.register(aiRoutes);
 
     // Start server
     await fastify.listen({ port: config.port, host: '0.0.0.0' });

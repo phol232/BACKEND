@@ -4,60 +4,240 @@ import { EmailService } from './emailService';
 import * as jwt from 'jsonwebtoken';
 import { config } from '../config';
 import * as admin from 'firebase-admin';
+import NodeCache from 'node-cache';
 
 const emailService = new EmailService();
+// Caché de usuarios: 5 minutos de TTL
+const userCache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
 
 export class UserService {
-  public async getUser(uid: string): Promise<User | null> {
-    console.log('🔍 Buscando usuario:', uid);
+  public async getUserInMicrofinanciera(microfinancieraId: string, uid: string): Promise<User | null> {
+    console.log('🔍 Buscando usuario en microfinanciera:', { microfinancieraId, uid });
     
-    // Primero intentar en la colección global (para compatibilidad)
-    const globalUserDoc = await db().collection('users').doc(uid).get();
-    if (globalUserDoc.exists) {
-      console.log('✅ Usuario encontrado en colección global');
-      return globalUserDoc.data() as User;
+    const userDoc = await db()
+      .collection('microfinancieras')
+      .doc(microfinancieraId)
+      .collection('users')
+      .doc(uid)
+      .get();
+    
+    if (!userDoc.exists) {
+      console.log('❌ Usuario no encontrado en microfinanciera');
+      return null;
+    }
+    
+    const userData = userDoc.data();
+    console.log('✅ Usuario encontrado en microfinanciera');
+    
+    // Priorizar primaryRoleId sobre roles array
+    let userRole: 'admin' | 'analyst' | 'employee' = 'employee';
+    if (userData?.primaryRoleId) {
+      userRole = userData.primaryRoleId as 'admin' | 'analyst' | 'employee';
+      console.log('📋 Rol desde primaryRoleId:', userRole);
+    } else if (userData?.roles && Array.isArray(userData.roles) && userData.roles.length > 0) {
+      // Fallback a roles array si no hay primaryRoleId
+      if (userData.roles.includes('admin')) userRole = 'admin';
+      else if (userData.roles.includes('analyst')) userRole = 'analyst';
+      else if (userData.roles.includes('employee')) userRole = 'employee';
+      else if (userData.roles.includes('agent')) userRole = 'employee'; // Legacy
+      console.log('📋 Rol desde roles array:', userRole);
+    }
+    
+    const user: User = {
+      uid: userData?.userId || uid,
+      email: userData?.email || '',
+      displayName: userData?.displayName,
+      photoURL: userData?.photoUrl,
+      phoneNumber: userData?.phone,
+      provider: userData?.providerIds?.includes('google.com') ? 'google' : 
+                userData?.linkedProviders?.includes('google') ? 'google' : 'email',
+      status: userData?.status || 'pending',
+      role: userRole,
+      createdAt: userData?.createdAt || admin.firestore.Timestamp.fromDate(new Date()),
+      updatedAt: userData?.updatedAt || admin.firestore.Timestamp.fromDate(new Date()),
+      approvedAt: userData?.approvedAt,
+      rejectedAt: userData?.rejectedAt,
+      rejectionReason: userData?.rejectionReason,
+    };
+    
+    console.log('✅ Usuario mapeado:', { uid: user.uid, email: user.email, role: user.role, status: user.status });
+    
+    return user;
+  }
+
+  public async getUser(uid: string): Promise<User | null> {
+    // Verificar caché primero
+    const cacheKey = `user_${uid}`;
+    const cachedUser = userCache.get<User>(cacheKey);
+    if (cachedUser) {
+      console.log('✅ Usuario encontrado en caché:', uid);
+      return cachedUser;
     }
 
-    // Si no está en la colección global, buscar en todas las microfinancieras
-    console.log('🔍 Buscando en microfinancieras...');
-    const microfinancierasSnapshot = await db().collection('microfinancieras').get();
+    console.log('🔍 Buscando usuario en BD:', uid);
     
-    for (const mfDoc of microfinancierasSnapshot.docs) {
-      const userDoc = await db()
-        .collection('microfinancieras')
-        .doc(mfDoc.id)
-        .collection('users')
-        .doc(uid)
+    try {
+      // Intentar usar collectionGroup (requiere índice)
+      const userQuery = await db()
+        .collectionGroup('users')
+        .where('userId', '==', uid)
+        .limit(1)
         .get();
       
-      if (userDoc.exists) {
+      if (!userQuery.empty) {
+        const userDoc = userQuery.docs[0];
         const userData = userDoc.data();
-        console.log('✅ Usuario encontrado en microfinanciera:', mfDoc.id);
+        console.log('✅ Usuario encontrado via collectionGroup');
         
-        // Convertir el formato de microfinanciera al formato esperado por el backend
-        const user: User = {
-          uid: userData?.userId || uid,
-          email: userData?.email || '',
-          displayName: userData?.displayName,
-          photoURL: userData?.photoUrl,
-          phoneNumber: userData?.phone,
-          provider: userData?.linkedProviders?.includes('google') ? 'google' : 'email',
-          status: userData?.status || 'pending',
-          role: userData?.roles?.includes('admin') ? 'admin' : 
-                userData?.roles?.includes('agent') ? 'agent' : 'user',
-          createdAt: userData?.createdAt || admin.firestore.Timestamp.fromDate(new Date()),
-          updatedAt: userData?.updatedAt || admin.firestore.Timestamp.fromDate(new Date()),
-          approvedAt: userData?.approvedAt,
-          rejectedAt: userData?.rejectedAt,
-          rejectionReason: userData?.rejectionReason,
-        };
+        const user = this.mapUserData(userData, uid);
+        userCache.set(cacheKey, user);
+        console.log('💾 Usuario guardado en caché');
         
         return user;
       }
+    } catch (error: any) {
+      // Si falla por índice faltante, usar fallback
+      if (error.message?.includes('FAILED_PRECONDITION') || error.message?.includes('index')) {
+        console.log('⚠️ Índice no disponible, usando búsqueda directa');
+        
+        // Buscar en microfinanciera conocida (mf_demo_001)
+        const knownMfIds = ['mf_demo_001', 'S1']; // IDs conocidos
+        
+        for (const mfId of knownMfIds) {
+          try {
+            const userDoc = await db()
+              .collection('microfinancieras')
+              .doc(mfId)
+              .collection('users')
+              .doc(uid)
+              .get();
+            
+            if (userDoc.exists) {
+              console.log('✅ Usuario encontrado en microfinanciera:', mfId);
+              const userData = userDoc.data();
+              const user = this.mapUserData(userData, uid);
+              userCache.set(cacheKey, user);
+              return user;
+            }
+          } catch (err) {
+            console.log('❌ Error buscando en', mfId, err);
+          }
+        }
+      } else {
+        throw error;
+      }
     }
     
-    console.log('❌ Usuario no encontrado en ninguna microfinanciera');
+    // Fallback a colección global
+    console.log('🔍 Buscando en colección global...');
+    const globalUserDoc = await db().collection('users').doc(uid).get();
+    if (globalUserDoc.exists) {
+      console.log('⚠️ Usuario encontrado en colección global (legacy)');
+      const userData = globalUserDoc.data();
+      
+      let userRole: 'admin' | 'analyst' | 'employee' = 'employee';
+      if (userData?.primaryRoles && Array.isArray(userData.primaryRoles) && userData.primaryRoles.length > 0) {
+        const primaryRole = userData.primaryRoles[0];
+        if (['admin', 'analyst', 'employee'].includes(primaryRole)) {
+          userRole = primaryRole as 'admin' | 'analyst' | 'employee';
+        }
+      }
+      
+      const user = {
+        ...userData,
+        uid,
+        role: userRole,
+      } as User;
+      
+      userCache.set(cacheKey, user);
+      return user;
+    }
+    
+    console.log('❌ Usuario no encontrado');
     return null;
+  }
+
+  private mapUserData(userData: any, uid: string): User {
+    // Priorizar primaryRoleId sobre roles array
+    let userRole: 'admin' | 'analyst' | 'employee' = 'employee';
+    if (userData?.primaryRoleId) {
+      userRole = userData.primaryRoleId as 'admin' | 'analyst' | 'employee';
+    } else if (userData?.roles && Array.isArray(userData.roles) && userData.roles.length > 0) {
+      if (userData.roles.includes('admin')) userRole = 'admin';
+      else if (userData.roles.includes('analyst')) userRole = 'analyst';
+      else if (userData.roles.includes('employee')) userRole = 'employee';
+      else if (userData.roles.includes('agent')) userRole = 'employee';
+    }
+    
+    return {
+      uid: userData?.userId || uid,
+      email: userData?.email || '',
+      displayName: userData?.displayName,
+      photoURL: userData?.photoUrl,
+      phoneNumber: userData?.phone,
+      provider: userData?.providerIds?.includes('google.com') ? 'google' : 
+                userData?.linkedProviders?.includes('google') ? 'google' : 'email',
+      status: userData?.status || 'pending',
+      role: userRole,
+      createdAt: userData?.createdAt || admin.firestore.Timestamp.fromDate(new Date()),
+      updatedAt: userData?.updatedAt || admin.firestore.Timestamp.fromDate(new Date()),
+      approvedAt: userData?.approvedAt,
+      rejectedAt: userData?.rejectedAt,
+      rejectionReason: userData?.rejectionReason,
+    };
+  }
+
+  async createPendingUserInMicrofinanciera(
+    microfinancieraId: string,
+    uid: string,
+    email: string,
+    displayName?: string,
+    provider: 'google' | 'email' = 'email',
+    role?: 'analyst' | 'employee'
+  ) {
+    console.log('🆕 Creando usuario en microfinanciera:', { microfinancieraId, uid, email, role });
+    
+    // Mapear el rol seleccionado al roleId de Firestore
+    const roleIds = role ? [role] : [];
+    
+    const newUserData = {
+      userId: uid,
+      email,
+      displayName: displayName || email.split('@')[0],
+      phone: '',
+      photoUrl: provider === 'google' ? `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName || email.split('@')[0])}` : null,
+      linkedProviders: [provider],
+      roles: [], // Vacío por ahora, se llenará al aprobar
+      roleIds: roleIds, // El rol seleccionado
+      status: 'pending',
+      createdAt: admin.firestore.Timestamp.fromDate(new Date()),
+      updatedAt: admin.firestore.Timestamp.fromDate(new Date()),
+      isActive: false,
+    };
+
+    await db()
+      .collection('microfinancieras')
+      .doc(microfinancieraId)
+      .collection('users')
+      .doc(uid)
+      .set(newUserData);
+    
+    console.log('✅ Usuario creado en microfinanciera');
+    
+    // Enviar emails
+    await this.sendApprovalEmail(uid, email, displayName);
+    await this.sendPendingConfirmationEmail(email, displayName);
+    
+    return {
+      uid,
+      email,
+      displayName,
+      provider,
+      status: 'pending' as const,
+      role: 'employee' as const, // Default role
+      createdAt: newUserData.createdAt,
+      updatedAt: newUserData.updatedAt,
+    };
   }
 
   async createPendingUser(uid: string, email: string, displayName?: string, provider: 'google' | 'email' = 'email') {
@@ -66,8 +246,9 @@ export class UserService {
       if (existingUser.status !== 'pending') {
         return existingUser;
       }
-      // If already pending, resend email?
+      // If already pending, resend emails
       await this.sendApprovalEmail(uid, email, displayName);
+      await this.sendPendingConfirmationEmail(email, displayName);
       return existingUser;
     }
 
@@ -77,14 +258,17 @@ export class UserService {
       displayName,
       provider,
       status: 'pending',
-      role: 'user',
+      role: 'employee', // Default role
       createdAt: admin.firestore.Timestamp.fromDate(new Date()),
       updatedAt: admin.firestore.Timestamp.fromDate(new Date()),
     };
 
-    await db().collection('users').doc(uid).set(newUser);
+    const userWithRole: User = newUser;
+    
+    await db().collection('users').doc(uid).set(userWithRole);
     await this.sendApprovalEmail(uid, email, displayName);
-    return newUser;
+    await this.sendPendingConfirmationEmail(email, displayName);
+    return userWithRole;
   }
 
   private generateApprovalToken(uid: string, action: 'approve' | 'reject'): string {
@@ -202,36 +386,127 @@ Sistema CREDITO-EXPRESS
   }
 
   private async updateUserInMicrofinanciera(uid: string, updates: any): Promise<void> {
-    // Buscar en todas las microfinancieras para encontrar y actualizar el usuario
-    const microfinancierasSnapshot = await db().collection('microfinancieras').get();
+    // Usar collectionGroup para encontrar el usuario más rápido
+    const userQuery = await db()
+      .collectionGroup('users')
+      .where('userId', '==', uid)
+      .limit(1)
+      .get();
     
-    for (const mfDoc of microfinancierasSnapshot.docs) {
-      const userDoc = await db()
-        .collection('microfinancieras')
-        .doc(mfDoc.id)
-        .collection('users')
-        .doc(uid)
-        .get();
+    if (!userQuery.empty) {
+      const userDoc = userQuery.docs[0];
+      console.log('📝 Actualizando usuario via collectionGroup');
+      await userDoc.ref.update(updates);
       
-      if (userDoc.exists) {
-        console.log('📝 Actualizando usuario en microfinanciera:', mfDoc.id);
-        await db()
-          .collection('microfinancieras')
-          .doc(mfDoc.id)
-          .collection('users')
-          .doc(uid)
-          .update(updates);
-        return;
-      }
+      // Invalidar caché
+      const cacheKey = `user_${uid}`;
+      userCache.del(cacheKey);
+      console.log('🗑️ Caché invalidado para usuario:', uid);
+      return;
     }
     
-    // Si no se encuentra en microfinancieras, intentar en la colección global
+    // Fallback a colección global
     const globalUserDoc = await db().collection('users').doc(uid).get();
     if (globalUserDoc.exists) {
       console.log('📝 Actualizando usuario en colección global');
       await db().collection('users').doc(uid).update(updates);
+      
+      // Invalidar caché
+      const cacheKey = `user_${uid}`;
+      userCache.del(cacheKey);
+      console.log('🗑️ Caché invalidado para usuario:', uid);
     } else {
       throw new Error(`No se pudo encontrar el usuario ${uid} para actualizar`);
+    }
+  }
+
+  async sendPendingConfirmationEmail(email: string, displayName?: string) {
+    try {
+      const userName = displayName || email.split('@')[0];
+      
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <style>
+            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+            .header { background: linear-gradient(135deg, #ff9800 0%, #ff5722 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+            .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+            .footer { text-align: center; margin-top: 30px; color: #666; font-size: 14px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h1>⏳ Cuenta Pendiente de Aprobación</h1>
+            </div>
+            <div class="content">
+              <p>Hola <strong>${userName}</strong>,</p>
+              
+              <p>¡Gracias por registrarte en nuestra plataforma de microfinanzas!</p>
+              
+              <p>Tu cuenta ha sido creada exitosamente y está actualmente <strong>pendiente de aprobación</strong> por nuestro equipo de administración.</p>
+              
+              <h3>📋 ¿Qué sucede ahora?</h3>
+              <ol>
+                <li>Nuestro equipo revisará tu información de registro</li>
+                <li>Verificaremos los datos proporcionados</li>
+                <li>Te notificaremos por correo una vez que tu cuenta sea aprobada</li>
+              </ol>
+              
+              <p><strong>⏱️ Tiempo estimado:</strong> Entre 24-48 horas hábiles</p>
+              
+              <p>Una vez aprobada tu cuenta, recibirás un correo de confirmación y podrás acceder a todas las funcionalidades de la plataforma.</p>
+              
+              <p>Si tienes alguna pregunta, no dudes en contactarnos.</p>
+              
+              <p>Saludos cordiales,<br>
+              <strong>Equipo de CREDITO-EXPRESS</strong></p>
+            </div>
+            <div class="footer">
+              <p>Este es un correo automático, por favor no respondas a este mensaje.</p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `;
+
+      const textContent = `
+Cuenta Pendiente de Aprobación
+
+Hola ${userName},
+
+¡Gracias por registrarte en nuestra plataforma de microfinanzas!
+
+Tu cuenta ha sido creada exitosamente y está actualmente pendiente de aprobación por nuestro equipo de administración.
+
+¿Qué sucede ahora?
+1. Nuestro equipo revisará tu información de registro
+2. Verificaremos los datos proporcionados
+3. Te notificaremos por correo una vez que tu cuenta sea aprobada
+
+Tiempo estimado: Entre 24-48 horas hábiles
+
+Una vez aprobada tu cuenta, recibirás un correo de confirmación y podrás acceder a todas las funcionalidades de la plataforma.
+
+Si tienes alguna pregunta, no dudes en contactarnos.
+
+Saludos cordiales,
+Equipo de CREDITO-EXPRESS
+      `;
+
+      await emailService.sendEmail({
+        to: email,
+        subject: '⏳ Tu cuenta está pendiente de aprobación - CREDITO-EXPRESS',
+        htmlContent,
+        textContent,
+      });
+
+      console.log('✅ Email de confirmación de registro pendiente enviado a:', email);
+    } catch (error) {
+      console.error('❌ Error enviando email de confirmación de registro pendiente:', error);
     }
   }
 

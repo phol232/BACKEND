@@ -19,6 +19,12 @@ export const config = {
   jwt: {
     secret: process.env.JWT_SECRET || 'default-secret-change-in-production',
   },
+
+  llm: {
+    endpoint: process.env.API_LLM_URL || '',
+    apiKey: process.env.API_LLM_KEY || '',
+    agentId: process.env.API_LLM_ID || '',
+  },
   
   allowedOrigins: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'],
 };
