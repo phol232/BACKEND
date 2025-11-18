@@ -12,6 +12,7 @@ import { reportRoutes } from '../src/routes/reports';
 import { trackingRoutes } from '../src/routes/tracking';
 import { webhookRoutes } from '../src/routes/webhooks';
 import { userRoutes } from '../src/routes/users';
+import { aiRoutes } from '../src/routes/ai';
 
 // Initialize Firebase once
 initializeFirebase();
@@ -215,6 +216,7 @@ async function setup() {
   await fastify.register(trackingRoutes, { prefix: '/api/tracking' });
   await fastify.register(webhookRoutes, { prefix: '/api/webhooks' });
   await fastify.register(userRoutes, { prefix: '/api/users' });
+  await fastify.register(aiRoutes);
 
   await fastify.ready();
 }
