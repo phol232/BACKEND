@@ -44,6 +44,29 @@ interface PendingInstallment {
   status: string;
 }
 
+interface CardSummary {
+  id: string;
+  accountId: string;
+  cardType?: string;
+  cardBrand?: string;
+  status?: string;
+  maskedNumber?: string;
+  holderName?: string;
+  createdAt?: Date | null;
+}
+
+interface TransactionSummary {
+  id: string;
+  refType: string;
+  refId: string;
+  type?: string;
+  debit: number;
+  credit: number;
+  currency: string;
+  createdAt?: Date | null;
+  metadata?: Record<string, any>;
+}
+
 export class AIService {
   async processChat(params: ProcessChatParams) {
     if (!config.llm.endpoint || !config.llm.apiKey) {
@@ -55,9 +78,20 @@ export class AIService {
       this.fetchUserLoans(params.microfinancieraId, params.userId),
     ]);
 
+    const accountIds = accounts.map((account) => account.id);
+    const cards = await this.fetchUserCards(params.microfinancieraId, accountIds);
+    const cardIds = cards.map((card) => card.id);
+    const transactions = await this.fetchRecentTransactions({
+      microfinancieraId: params.microfinancieraId,
+      accountIds,
+      cardIds,
+    });
+
     const contextSummary = this.buildContextSummary({
       accounts,
       loans,
+      cards,
+      transactions,
       userId: params.userId,
       microfinancieraId: params.microfinancieraId,
       userName: params.userName,
@@ -156,6 +190,129 @@ export class AIService {
     return loans;
   }
 
+  private async fetchUserCards(
+    microfinancieraId: string,
+    accountIds: string[],
+  ): Promise<CardSummary[]> {
+    if (!accountIds.length) {
+      return [];
+    }
+
+    const chunks = this.chunkArray(accountIds, 10);
+    const results: CardSummary[] = [];
+
+    for (const chunk of chunks) {
+      const snapshot = await db()
+        .collection('microfinancieras')
+        .doc(microfinancieraId)
+        .collection('cards')
+        .where('accountId', 'in', chunk)
+        .get();
+
+      snapshot.docs.forEach((doc) => {
+        const data = doc.data();
+        if (!data?.accountId) return;
+        const holderName =
+          data.name ||
+          [data.holderFirstName, data.holderLastName]
+            .filter((value: string | undefined) => Boolean(value))
+            .join(' ')
+            .trim() ||
+          undefined;
+        results.push({
+          id: doc.id,
+          accountId: data.accountId,
+          cardType: data.cardType,
+          cardBrand: data.cardBrand,
+          status: data.status,
+          maskedNumber: data.maskedCardNumber,
+          holderName,
+          createdAt: this.toDate(data.createdAt),
+        });
+      });
+    }
+
+    return results;
+  }
+
+  private async fetchRecentTransactions(args: {
+    microfinancieraId: string;
+    accountIds: string[];
+    cardIds: string[];
+    perResourceLimit?: number;
+    overallLimit?: number;
+  }): Promise<TransactionSummary[]> {
+    const { microfinancieraId, accountIds, cardIds } = args;
+    const perResourceLimit = args.perResourceLimit ?? 3;
+    const overallLimit = args.overallLimit ?? 12;
+
+    const queries: Array<Promise<FirebaseFirestore.QuerySnapshot<FirebaseFirestore.DocumentData>>> =
+      [];
+    const references: Array<{ type: 'account' | 'card'; id: string }> = [];
+
+    accountIds.slice(0, 4).forEach((accountId) => {
+      queries.push(
+        db()
+          .collection('microfinancieras')
+          .doc(microfinancieraId)
+          .collection('transactions')
+          .where('refType', '==', 'account')
+          .where('refId', '==', accountId)
+          .orderBy('createdAt', 'desc')
+          .limit(perResourceLimit)
+          .get(),
+      );
+      references.push({ type: 'account', id: accountId });
+    });
+
+    cardIds.slice(0, 4).forEach((cardId) => {
+      queries.push(
+        db()
+          .collection('microfinancieras')
+          .doc(microfinancieraId)
+          .collection('transactions')
+          .where('refType', '==', 'card')
+          .where('refId', '==', cardId)
+          .orderBy('createdAt', 'desc')
+          .limit(perResourceLimit)
+          .get(),
+      );
+      references.push({ type: 'card', id: cardId });
+    });
+
+    if (!queries.length) {
+      return [];
+    }
+
+    const snapshots = await Promise.all(queries);
+    const transactions: TransactionSummary[] = [];
+
+    snapshots.forEach((snapshot, index) => {
+      snapshot.docs.forEach((doc) => {
+        const data = doc.data();
+        transactions.push({
+          id: doc.id,
+          refType: data.refType ?? references[index]?.type ?? 'account',
+          refId: data.refId ?? references[index]?.id ?? '',
+          type: data.type,
+          debit: typeof data.debit === 'number' ? data.debit : Number(data.debit) || 0,
+          credit: typeof data.credit === 'number' ? data.credit : Number(data.credit) || 0,
+          currency: data.currency ?? 'PEN',
+          createdAt: this.toDate(data.createdAt),
+          metadata: data.metadata,
+        });
+      });
+    });
+
+    return transactions
+      .sort(
+        (a, b) =>
+          (b.createdAt?.getTime() ?? 0) -
+          (a.createdAt?.getTime() ?? 0),
+      )
+      .slice(0, overallLimit);
+  }
+
   private async fetchPendingInstallments(
     microfinancieraId: string,
     loanId: string,
@@ -193,6 +350,8 @@ export class AIService {
   private buildContextSummary(args: {
     accounts: AccountSummary[];
     loans: LoanSummary[];
+    cards: CardSummary[];
+    transactions: TransactionSummary[];
     userId: string;
     microfinancieraId: string;
     userName?: string;
@@ -219,6 +378,19 @@ export class AIService {
           .join('\n')
       : '- No se encontraron cuentas asociadas.';
 
+    const cardSection = args.cards.length
+      ? args.cards
+          .map((card) => {
+            const alias =
+              card.maskedNumber ??
+              (card.id ? `****${card.id.slice(-4)}` : 'Tarjeta');
+            return `- ${alias} (${card.cardType ?? 'tarjeta'}) · estado ${
+              card.status ?? 'desconocido'
+            }${card.cardBrand ? ` · marca ${card.cardBrand}` : ''}`;
+          })
+          .join('\n')
+      : '- No hay tarjetas asociadas a las cuentas actuales.';
+
     const loanSection = args.loans.length
       ? args.loans
           .map((loan) => {
@@ -234,6 +406,42 @@ export class AIService {
           .join('\n')
       : '- No hay créditos registrados para este usuario.';
 
+    const accountLookup = new Map(
+      args.accounts.map((account) => {
+        const alias =
+          account.accountNumber && account.accountNumber.length >= 4
+            ? `****${account.accountNumber.slice(-4)}`
+            : account.id;
+        return [account.id, alias];
+      }),
+    );
+
+    const cardLookup = new Map(
+      args.cards.map((card) => [card.id, card.maskedNumber ?? `****${card.id.slice(-4)}`]),
+    );
+
+    const transactionSection = args.transactions.length
+      ? args.transactions
+          .map((tx) => {
+            const target =
+              tx.refType === 'card'
+                ? `Tarjeta ${cardLookup.get(tx.refId) ?? tx.refId}`
+                : `Cuenta ${accountLookup.get(tx.refId) ?? tx.refId}`;
+            const net = tx.credit - tx.debit;
+            const amount =
+              net !== 0
+                ? `${net >= 0 ? '+' : '-'}${formatCurrency(Math.abs(net), tx.currency)}`
+                : formatCurrency(tx.credit || tx.debit || 0, tx.currency);
+            const concept =
+              tx.metadata?.description ||
+              tx.metadata?.concept ||
+              tx.type ||
+              'Movimiento';
+            return `- ${this.formatDate(tx.createdAt)} · ${target} · ${concept} · ${amount}`;
+          })
+          .join('\n')
+      : '- No se encontraron movimientos recientes en tus cuentas o tarjetas.';
+
     return [
       `### Usuario autenticado`,
       `- Nombre visible: ${args.userName ?? 'sin nombre'}`,
@@ -243,8 +451,14 @@ export class AIService {
       `### Cuentas (${args.accounts.length})`,
       accountSection,
       ``,
+      `### Tarjetas (${args.cards.length})`,
+      cardSection,
+      ``,
       `### Créditos (${args.loans.length})`,
       loanSection,
+      ``,
+      `### Movimientos recientes`,
+      transactionSection,
       ``,
       `### Reglas de respuesta`,
       `- Usa los datos anteriores para responder sin volver a solicitarlos.`,
@@ -381,5 +595,14 @@ export class AIService {
       month: 'short',
       year: 'numeric',
     });
+  }
+
+  private chunkArray<T>(array: T[], chunkSize: number): T[][] {
+    if (chunkSize <= 0) return [array];
+    const chunks: T[][] = [];
+    for (let i = 0; i < array.length; i += chunkSize) {
+      chunks.push(array.slice(i, i + chunkSize));
+    }
+    return chunks;
   }
 }
