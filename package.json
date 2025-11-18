@@ -7,7 +7,7 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
-    "vercel-build": "echo 'Building for Vercel...'",
+    "vercel-build": "npm run build",
     "lint": "eslint src --ext .ts",
     "test": "jest",
     "seed:products": "tsx scripts/seed-products.ts",
