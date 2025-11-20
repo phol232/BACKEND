@@ -139,10 +139,20 @@ export async function microfinancieraRoutes(fastify: FastifyInstance) {
           clientName = data.clientName;
         }
         
+        // Obtener el monto de la solicitud
+        let amount = 0;
+        if (data.financialInfo && data.financialInfo.loanAmount) {
+          amount = data.financialInfo.loanAmount;
+        } else if (data.requestedAmount) {
+          amount = data.requestedAmount;
+        } else if (data.amount) {
+          amount = data.amount;
+        }
+        
         return {
           id: doc.id,
           clientName,
-          amount: data.requestedAmount || data.amount || 0,
+          amount,
           status: data.status || 'pending',
           createdAt: data.createdAt,
           zone: data.zone,
