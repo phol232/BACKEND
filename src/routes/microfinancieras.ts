@@ -128,9 +128,20 @@ export async function microfinancieraRoutes(fastify: FastifyInstance) {
       const snapshot = await query.get();
       const applications = snapshot.docs.map((doc: any) => {
         const data = doc.data();
+        
+        // Construir el nombre completo del cliente
+        let clientName = 'Sin nombre';
+        if (data.personalInfo) {
+          const firstName = data.personalInfo.firstName || '';
+          const lastName = data.personalInfo.lastName || '';
+          clientName = `${firstName} ${lastName}`.trim() || 'Sin nombre';
+        } else if (data.clientName) {
+          clientName = data.clientName;
+        }
+        
         return {
           id: doc.id,
-          clientName: data.personalInfo?.fullName || data.clientName || 'Sin nombre',
+          clientName,
           amount: data.requestedAmount || data.amount || 0,
           status: data.status || 'pending',
           createdAt: data.createdAt,
