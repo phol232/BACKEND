@@ -246,6 +246,8 @@ export async function applicationRoutes(fastify: FastifyInstance) {
           });
         }
 
+        const previousAssignedUserId = appDoc.data()?.assignedUserId ?? null;
+
         // Actualizar asignación
         await appRef.update({
           'routing.agentId': analystId,
@@ -267,7 +269,7 @@ export async function applicationRoutes(fastify: FastifyInstance) {
           'APPLICATION_ASSIGNED',
           'loanApplication',
           applicationId,
-          { assignedUserId: appDoc.data()?.assignedUserId },
+          { assignedUserId: previousAssignedUserId },
           { assignedUserId: analystId },
           applicationId
         );

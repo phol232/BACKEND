@@ -30,7 +30,9 @@ export class DisbursementService {
   async disburseLoan(
     microfinancieraId: string,
     applicationId: string,
-    requestId: string
+    requestId: string,
+    accountId: string,
+    branchId?: string
   ): Promise<void> {
     // Idempotencia: verificar si ya fue procesado
     if (this.processedRequests.has(requestId)) {
@@ -72,7 +74,53 @@ export class DisbursementService {
       throw new Error("La solicitud debe estar aprobada para desembolsar");
     }
 
-    const { loanAmount, loanTermMonths } = application.financialInfo;
+    if (!accountId) {
+      throw new Error("Debe seleccionar una cuenta destino para el desembolso");
+    }
+
+    // Verificar cuenta destino
+    const accountRef = this.db
+      .collection("microfinancieras")
+      .doc(microfinancieraId)
+      .collection("accounts")
+      .doc(accountId);
+
+    const accountDoc = await accountRef.get();
+    if (!accountDoc.exists) {
+      throw new Error("Cuenta destino no encontrada");
+    }
+
+    const account = accountDoc.data() as any;
+    if (account.status !== "active") {
+      throw new Error("La cuenta seleccionada no está activa");
+    }
+
+    if (account.userId !== application.userId) {
+      throw new Error("La cuenta seleccionada no pertenece al solicitante");
+    }
+
+    const currentBalance =
+      typeof account.balance === "number"
+        ? account.balance
+        : typeof account.initialDeposit === "number"
+          ? account.initialDeposit
+          : 0;
+
+    const {
+      loanAmount: rawLoanAmount,
+      loanTermMonths: rawLoanTerm,
+    } = application.financialInfo;
+    const loanAmount = typeof rawLoanAmount === "number" ? rawLoanAmount : Number(rawLoanAmount);
+    const loanTermMonths =
+      typeof rawLoanTerm === "number" ? rawLoanTerm : Number(rawLoanTerm);
+
+    if (!loanAmount || isNaN(loanAmount) || loanAmount <= 0) {
+      throw new Error("El monto del préstamo es inválido");
+    }
+
+    if (!loanTermMonths || isNaN(loanTermMonths) || loanTermMonths <= 0) {
+      throw new Error("El plazo del préstamo es inválido");
+    }
 
     // 1. Generar cronograma de pagos
     const schedule = this.generateRepaymentSchedule(
@@ -100,27 +148,88 @@ export class DisbursementService {
       await entriesRef.add(entry);
     }
 
-    // 5. Actualizar estado de la aplicación
-    await appRef.update({
-      status: "disbursed",
-      disbursedAt: Timestamp.now(),
-      disbursementRequestId: requestId,
-      updatedAt: Timestamp.now(),
+    // 5. Registrar transacciones y actualizar la cuenta destino
+    const transactionsRef = this.db
+      .collection("microfinancieras")
+      .doc(microfinancieraId)
+      .collection("transactions");
+
+    const batch = this.db.batch();
+    const now = Timestamp.now();
+    const branch = branchId || application.routing?.branchId || "central";
+
+    const disbursementRef = transactionsRef.doc();
+    batch.set(disbursementRef, {
+      mfId: microfinancieraId,
+      type: "DISBURSEMENT",
+      refType: "loan",
+      refId: applicationId,
+      debit: 0,
+      credit: loanAmount,
+      currency: "PEN",
+      branchId: branch,
+      createdAt: now,
+      metadata: {
+        accountId,
+        disbursementType: "loan",
+      },
     });
 
-    // 6. Registrar desembolso procesado
+    const accountCreditRef = transactionsRef.doc();
+    batch.set(accountCreditRef, {
+      mfId: microfinancieraId,
+      type: "ACCOUNT_CREDIT",
+      refType: "account",
+      refId: accountId,
+      debit: 0,
+      credit: loanAmount,
+      currency: "PEN",
+      branchId: branch,
+      createdAt: now,
+      metadata: {
+        loanId: applicationId,
+        disbursementType: "loan",
+      },
+    });
+
+    batch.update(accountRef, {
+      balance: currentBalance + loanAmount,
+      lastUpdated: now,
+    });
+
+    await batch.commit();
+
+    // 6. Actualizar estado de la aplicación
+    await appRef.update({
+      status: "disbursed",
+      disbursedAt: now,
+      disbursementRequestId: requestId,
+      disbursementDetails: {
+        accountId,
+        accountNumber: account.accountNumber || null,
+        bankName: account.bankName || null,
+        branchId: branch,
+        amount: loanAmount,
+        processedAt: now,
+      },
+      updatedAt: now,
+    });
+
+    // 7. Registrar desembolso procesado
     await this.db.collection("disbursements").doc(requestId).set({
       applicationId,
       microfinancieraId,
       amount: loanAmount,
-      processedAt: Timestamp.now(),
+      processedAt: now,
+      accountId,
+      branchId: branch,
     });
 
     this.processedRequests.add(requestId);
 
     console.log(`Desembolso completado: ${applicationId} (${loanAmount})`);
 
-    // 7. Enviar email de confirmación de desembolso
+    // 8. Enviar email de confirmación de desembolso
     try {
       const customerName = `${application.personalInfo.firstName} ${application.personalInfo.lastName}`;
       const customerEmail = application.contactInfo.email;
@@ -257,4 +366,3 @@ export class DisbursementService {
     return snapshot.docs.map((doc) => doc.data() as AccountingEntry);
   }
 }
-

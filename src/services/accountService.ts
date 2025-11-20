@@ -30,6 +30,7 @@ export class AccountService {
       endDate?: Date;
       limit?: number;
       page?: number;
+      userId?: string;
     }
   ): Promise<Account[]> {
     let query = db()
@@ -45,6 +46,9 @@ export class AccountService {
     }
     if (filters?.accountType) {
       query = query.where('accountType', '==', filters.accountType) as any;
+    }
+    if (filters?.userId) {
+      query = query.where('userId', '==', filters.userId) as any;
     }
     if (filters?.startDate) {
       query = query.where('createdAt', '>=', Timestamp.fromDate(filters.startDate)) as any;
@@ -537,4 +541,3 @@ export class AccountService {
     };
   }
 }
-

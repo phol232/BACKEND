@@ -11,6 +11,8 @@ export async function disbursementRoutes(fastify: FastifyInstance) {
       microfinancieraId: string;
       applicationId: string;
       requestId: string;
+      accountId: string;
+      branchId?: string;
     };
   }>(
     '/disburse',
@@ -23,30 +25,35 @@ export async function disbursementRoutes(fastify: FastifyInstance) {
         security: [{ bearerAuth: [] }],
         body: {
           type: 'object',
-          required: ['microfinancieraId', 'applicationId', 'requestId'],
+          required: ['microfinancieraId', 'applicationId', 'requestId', 'accountId'],
           properties: {
             microfinancieraId: { type: 'string' },
             applicationId: { type: 'string' },
             requestId: { type: 'string' },
+            accountId: { type: 'string' },
+            branchId: { type: 'string' },
           },
         },
       },
     },
     async (request, reply) => {
-      const { microfinancieraId, applicationId, requestId } = request.body;
+      const { microfinancieraId, applicationId, requestId, accountId, branchId } = request.body;
 
       fastify.log.info({
         msg: 'Disbursing loan',
         microfinancieraId,
         applicationId,
         requestId,
+        accountId,
       });
 
       try {
         await disbursementService.disburseLoan(
           microfinancieraId,
           applicationId,
-          requestId
+          requestId,
+          accountId,
+          branchId
         );
 
         return reply.send({

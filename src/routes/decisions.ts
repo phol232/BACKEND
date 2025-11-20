@@ -11,7 +11,7 @@ export async function decisionRoutes(fastify: FastifyInstance) {
       microfinancieraId: string;
       applicationId: string;
       result: 'approved' | 'rejected' | 'observed';
-      comments: string;
+      comments?: string;
     };
   }>(
     '/manual',
@@ -24,12 +24,12 @@ export async function decisionRoutes(fastify: FastifyInstance) {
         security: [{ bearerAuth: [] }],
         body: {
           type: 'object',
-          required: ['microfinancieraId', 'applicationId', 'result', 'comments'],
+          required: ['microfinancieraId', 'applicationId', 'result'],
           properties: {
             microfinancieraId: { type: 'string' },
             applicationId: { type: 'string' },
             result: { type: 'string', enum: ['approved', 'rejected', 'observed'] },
-            comments: { type: 'string', minLength: 5 },
+            comments: { type: 'string' },
           },
         },
       },
@@ -39,11 +39,26 @@ export async function decisionRoutes(fastify: FastifyInstance) {
       const user = (request as AuthenticatedRequest).user;
 
       try {
+        let finalComments = comments?.trim() || '';
+
+        if (result === 'approved' && finalComments.length === 0) {
+          finalComments = 'Aprobado automáticamente';
+        }
+
+        if (
+          (result === 'rejected' || result === 'observed') &&
+          finalComments.length < 5
+        ) {
+          return reply.code(400).send({
+            error: 'Los comentarios deben tener al menos 5 caracteres para rechazar o condicionar una solicitud.',
+          });
+        }
+
         const decision = await decisionService.makeManualDecision(
           microfinancieraId,
           applicationId,
           result,
-          comments,
+          finalComments,
           user.uid
         );
 
