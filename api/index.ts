@@ -12,6 +12,10 @@ import { reportRoutes } from '../src/routes/reports';
 import { trackingRoutes } from '../src/routes/tracking';
 import { webhookRoutes } from '../src/routes/webhooks';
 import { userRoutes } from '../src/routes/users';
+import { accountRoutes } from '../src/routes/accounts';
+import { cardRoutes } from '../src/routes/cards';
+import { workerRoutes } from '../src/routes/workers';
+import { microfinancieraRoutes } from '../src/routes/microfinancieras';
 import { aiRoutes } from '../src/routes/ai';
 
 // Initialize Firebase once
@@ -216,6 +220,10 @@ async function setup() {
   await fastify.register(trackingRoutes, { prefix: '/api/tracking' });
   await fastify.register(webhookRoutes, { prefix: '/api/webhooks' });
   await fastify.register(userRoutes, { prefix: '/api/users' });
+  await fastify.register(accountRoutes, { prefix: '/api/accounts' });
+  await fastify.register(cardRoutes, { prefix: '/api/cards' });
+  await fastify.register(workerRoutes, { prefix: '/api/workers' });
+  await fastify.register(microfinancieraRoutes, { prefix: '/api/microfinancieras' });
   await fastify.register(aiRoutes);
 
   await fastify.ready();
