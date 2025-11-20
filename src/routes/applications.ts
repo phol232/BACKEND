@@ -87,10 +87,36 @@ export async function applicationRoutes(fastify: FastifyInstance) {
         query = query.orderBy('createdAt', 'desc');
 
         const snapshot = await query.get();
-        const applications = snapshot.docs.map((doc: QueryDocumentSnapshot<DocumentData>) => ({
-          id: doc.id,
-          ...doc.data(),
-        }));
+        const applications = snapshot.docs.map((doc: QueryDocumentSnapshot<DocumentData>) => {
+          const data = doc.data();
+          
+          // Construir el nombre completo del cliente
+          let clientName = 'Sin nombre';
+          if (data.personalInfo) {
+            const firstName = data.personalInfo.firstName || '';
+            const lastName = data.personalInfo.lastName || '';
+            clientName = `${firstName} ${lastName}`.trim() || 'Sin nombre';
+          } else if (data.clientName) {
+            clientName = data.clientName;
+          }
+          
+          // Obtener el monto de la solicitud
+          let amount = 0;
+          if (data.financialInfo && data.financialInfo.loanAmount) {
+            amount = data.financialInfo.loanAmount;
+          } else if (data.requestedAmount) {
+            amount = data.requestedAmount;
+          } else if (data.amount) {
+            amount = data.amount;
+          }
+          
+          return {
+            id: doc.id,
+            clientName,
+            amount,
+            ...data,
+          };
+        });
 
         console.log(`✅ Retornando ${applications.length} solicitudes para usuario ${user?.role}`);
         return reply.send({ applications });
