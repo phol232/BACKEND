@@ -36,9 +36,13 @@ async function start() {
     const isProduction = config.nodeEnv === 'production';
     const shouldEnableSwagger = !isVercel && !isProduction && config.nodeEnv === 'development';
 
-    // CORS
+    // CORS - Allow all origins
     await fastify.register(cors, {
-      origin: true, // Allow all origins in development
+      origin: (origin, callback) => {
+        // Allow all origins in development and production
+        // This is necessary for the API to work with any frontend
+        callback(null, true);
+      },
       credentials: true,
       allowedHeaders: ['Content-Type', 'Authorization'],
       exposedHeaders: ['Content-Type', 'Authorization'],
