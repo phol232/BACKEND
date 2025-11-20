@@ -262,7 +262,7 @@ export async function userRoutes(fastify: FastifyInstance) {
           provider: { type: 'string', enum: ['google', 'email'] },
           uid: { type: 'string' },
           microfinancieraId: { type: 'string' },
-          role: { type: 'string', enum: ['analyst', 'employee'] }
+          role: { type: 'string' }
         },
         required: ['email', 'provider', 'uid', 'microfinancieraId']
       }
@@ -274,13 +274,19 @@ export async function userRoutes(fastify: FastifyInstance) {
       provider: 'google' | 'email';
       uid: string;
       microfinancieraId: string;
-      role?: 'analyst' | 'employee';
+      role?: string;
     } 
   }>, reply) => {
     try {
       const { email, displayName, provider, uid, microfinancieraId, role } = request.body;
       
-      console.log('📧 Notificación de registro recibida:', { uid, email, displayName, provider, microfinancieraId, role });
+      // Validar y normalizar el rol
+      const validRoles = ['admin', 'analyst', 'employee'];
+      const normalizedRole = role && validRoles.includes(role) 
+        ? role as 'admin' | 'analyst' | 'employee'
+        : undefined;
+      
+      console.log('📧 Notificación de registro recibida:', { uid, email, displayName, provider, microfinancieraId, role: normalizedRole });
       
       if (!microfinancieraId) {
         return reply.code(400).send({ error: 'microfinancieraId is required' });
@@ -323,7 +329,7 @@ export async function userRoutes(fastify: FastifyInstance) {
         email,
         displayName,
         provider,
-        role
+        normalizedRole
       );
       console.log('✅ Usuario creado en base de datos:', { uid, microfinancieraId, status: newUser.status });
       

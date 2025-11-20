@@ -193,7 +193,7 @@ export class UserService {
     email: string,
     displayName?: string,
     provider: 'google' | 'email' = 'email',
-    role?: 'analyst' | 'employee'
+    role?: 'admin' | 'analyst' | 'employee'
   ) {
     console.log('🆕 Creando usuario en microfinanciera:', { microfinancieraId, uid, email, role });
     
