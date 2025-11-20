@@ -126,10 +126,20 @@ export async function microfinancieraRoutes(fastify: FastifyInstance) {
       }
 
       const snapshot = await query.get();
-      const applications = snapshot.docs.map((doc: any) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
+      const applications = snapshot.docs.map((doc: any) => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          clientName: data.personalInfo?.fullName || data.clientName || 'Sin nombre',
+          amount: data.requestedAmount || data.amount || 0,
+          status: data.status || 'pending',
+          createdAt: data.createdAt,
+          zone: data.zone,
+          productId: data.productId,
+          assignedUserId: data.assignedUserId,
+          ...data,
+        };
+      });
 
       return reply.send({ 
         applications,
@@ -173,7 +183,7 @@ export async function microfinancieraRoutes(fastify: FastifyInstance) {
       const total = applicationsSnapshot.size;
       const approved = applicationsSnapshot.docs.filter(doc => doc.data().status === 'approved').length;
       const pending = applicationsSnapshot.docs.filter(doc => doc.data().status === 'pending').length;
-      const inEvaluation = applicationsSnapshot.docs.filter(doc => doc.data().status === 'in_evaluation').length;
+      const observed = applicationsSnapshot.docs.filter(doc => doc.data().status === 'observed').length;
       const rejected = applicationsSnapshot.docs.filter(doc => doc.data().status === 'rejected').length;
 
       const approvalRate = total > 0 ? (approved / total) * 100 : 0;
@@ -182,7 +192,7 @@ export async function microfinancieraRoutes(fastify: FastifyInstance) {
         total,
         approved,
         pending,
-        inEvaluation,
+        observed,
         rejected,
         approvalRate: parseFloat(approvalRate.toFixed(2))
       });
