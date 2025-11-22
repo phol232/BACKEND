@@ -118,8 +118,8 @@ export async function stripeRoutes(fastify: FastifyInstance) {
           },
         ],
         mode: 'payment',
-        success_url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/cancel`,
+        success_url: 'https://stripe.com/success',
+        cancel_url: 'https://stripe.com/cancel',
         metadata: {
           microfinancieraId,
           accountId,
