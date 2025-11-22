@@ -42,6 +42,57 @@ export class StripeService {
   }
 
   /**
+   * Obtener o crear cuenta especial de Stripe para un usuario
+   */
+  private async getOrCreateStripeAccount(
+    microfinancieraId: string,
+    userId: string
+  ): Promise<string> {
+    try {
+      // Buscar si ya existe una cuenta de tipo Stripe para este usuario
+      const accountsSnapshot = await db()
+        .collection('microfinancieras')
+        .doc(microfinancieraId)
+        .collection('accounts')
+        .where('userId', '==', userId)
+        .where('accountType', '==', 'stripe')
+        .limit(1)
+        .get();
+
+      if (!accountsSnapshot.empty) {
+        const accountId = accountsSnapshot.docs[0].id;
+        console.log('✅ Cuenta Stripe existente encontrada:', accountId);
+        return accountId;
+      }
+
+      // Si no existe, crear una nueva cuenta de tipo Stripe
+      const accountData = {
+        userId,
+        accountType: 'stripe',
+        accountNumber: `STRIPE-${Date.now()}`,
+        balance: 0,
+        currency: 'PEN',
+        status: 'active',
+        description: 'Cuenta para pagos con Stripe',
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now(),
+      };
+
+      const accountRef = await db()
+        .collection('microfinancieras')
+        .doc(microfinancieraId)
+        .collection('accounts')
+        .add(accountData);
+
+      console.log('✅ Nueva cuenta Stripe creada:', accountRef.id);
+      return accountRef.id;
+    } catch (error: any) {
+      console.error('❌ Error al obtener/crear cuenta Stripe:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Procesar pago completado de Stripe
    */
   async processCompletedPayment(params: ProcessStripePaymentParams) {
@@ -57,6 +108,37 @@ export class StripeService {
 
       const totalAmount = session.amount_total ? session.amount_total / 100 : 0;
 
+      // Obtener el userId del primer installment para crear/obtener la cuenta Stripe
+      const firstInstallment = params.installments[0];
+      if (!firstInstallment) {
+        throw new Error('No hay cuotas para procesar');
+      }
+
+      // Obtener el userId del préstamo
+      const loanDoc = await db()
+        .collection('microfinancieras')
+        .doc(params.microfinancieraId)
+        .collection('loanApplications')
+        .doc(firstInstallment.loanId)
+        .get();
+
+      if (!loanDoc.exists) {
+        throw new Error('Préstamo no encontrado');
+      }
+
+      const userId = loanDoc.data()?.userId;
+      if (!userId) {
+        throw new Error('Usuario no encontrado en el préstamo');
+      }
+
+      // Obtener o crear cuenta especial de Stripe
+      const stripeAccountId = await this.getOrCreateStripeAccount(
+        params.microfinancieraId,
+        userId
+      );
+
+      console.log('💳 Usando cuenta Stripe:', stripeAccountId);
+
       // Procesar cada cuota
       const transactions = [];
       for (const installment of params.installments) {
@@ -68,10 +150,10 @@ export class StripeService {
           installment.amount
         );
 
-        // Registrar transacción
+        // Registrar transacción usando la cuenta especial de Stripe
         const transaction = await this.recordTransaction({
           microfinancieraId: params.microfinancieraId,
-          accountId: params.accountId,
+          accountId: stripeAccountId, // Usar la cuenta especial de Stripe
           loanId: installment.loanId,
           installmentId: installment.installmentId,
           amount: installment.amount,
