@@ -1,6 +1,6 @@
 import { Timestamp } from 'firebase-admin/firestore';
 
-export type CardStatus = 'pending' | 'active' | 'suspended' | 'closed' | 'rejected';
+export type CardStatus = 'pending' | 'requested' | 'active' | 'suspended' | 'closed' | 'rejected';
 
 export type CardType = 'debit' | 'credit' | 'prepaid';
 

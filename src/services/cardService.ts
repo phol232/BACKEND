@@ -10,10 +10,11 @@ export class CardService {
 
   private validTransitions: Record<CardStatus, CardStatus[]> = {
     pending: ['active', 'rejected'],
+    requested: ['active', 'rejected'],
     active: ['suspended', 'closed'],
     suspended: ['active', 'closed'],
     closed: [],
-    rejected: [],
+    rejected: ['active', 'closed'],
   };
 
   isValidTransition(from: CardStatus, to: CardStatus): boolean {
@@ -160,12 +161,12 @@ export class CardService {
     }
 
     const card = cardDoc.data() as Card;
-    if (card.status !== 'pending') {
+    if (!this.isValidTransition(card.status as CardStatus, 'active')) {
       throw new Error(`No se puede aprobar una tarjeta con estado: ${card.status}`);
     }
 
     const transition: CardTransition = {
-      from: card.status,
+      from: card.status as CardStatus,
       to: 'active',
       timestamp: Timestamp.now(),
       userId,
@@ -174,6 +175,7 @@ export class CardService {
 
     await cardRef.update({
       status: 'active',
+      isActive: true,
       approvedAt: Timestamp.now(),
       approvedBy: userId,
       updatedAt: Timestamp.now(),
@@ -389,6 +391,7 @@ export class CardService {
 
     await cardRef.update({
       status: 'suspended',
+      isActive: false,
       suspendedAt: Timestamp.now(),
       suspendedReason: reason,
       suspendedBy: userId,
@@ -490,6 +493,7 @@ export class CardService {
 
     await cardRef.update({
       status: 'active',
+      isActive: true,
       suspendedAt: null,
       suspendedReason: null,
       suspendedBy: null,
@@ -686,4 +690,3 @@ export class CardService {
     };
   }
 }
-

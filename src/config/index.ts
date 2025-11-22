@@ -25,6 +25,11 @@ export const config = {
     apiKey: process.env.API_LLM_KEY || '',
     agentId: process.env.API_LLM_ID || '',
   },
+
+  culqi: {
+    publicKey: process.env.API_CULQUI_PUBLIC || '',
+    privateKey: process.env.API_CULQUI_PRIV || '',
+  },
   
   allowedOrigins: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'],
 };

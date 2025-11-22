@@ -222,6 +222,291 @@ export async function microfinancieraRoutes(fastify: FastifyInstance) {
       return reply.code(500).send({ error: error.message });
     }
   });
+
+  // Métricas generales
+  fastify.get<{
+    Params: { id: string };
+  }>('/:id/metrics', {
+    preHandler: authenticate,
+    schema: {
+      description: 'Métricas generales de la microfinanciera',
+      tags: ['microfinancieras'],
+      security: [{ bearerAuth: [] }],
+      params: {
+        type: 'object',
+        properties: { id: { type: 'string' } },
+        required: ['id'],
+      },
+    },
+  }, async (request, reply) => {
+    const { id } = request.params;
+    try {
+      const applicationsSnap = await db()
+        .collection('microfinancieras')
+        .doc(id)
+        .collection('loanApplications')
+        .get();
+
+      const accountsSnap = await db()
+        .collection('microfinancieras')
+        .doc(id)
+        .collection('accounts')
+        .where('status', '==', 'active')
+        .get();
+
+      const cardsSnap = await db()
+        .collection('microfinancieras')
+        .doc(id)
+        .collection('cards')
+        .where('status', '==', 'active')
+        .get();
+
+      const metrics: Record<string, number> = {};
+      let totalDisbursed = 0;
+
+      applicationsSnap.docs.forEach((doc) => {
+        const data = doc.data();
+        const status = (data.status as string) || 'pending';
+        metrics[status] = (metrics[status] || 0) + 1;
+
+        if (status === 'disbursed') {
+          const amount =
+            data.disbursementAmount ||
+            data.approvedAmount ||
+            data.amount ||
+            data.requestedAmount ||
+            data.financialInfo?.loanAmount ||
+            0;
+          totalDisbursed += Number(amount) || 0;
+        }
+      });
+
+      return reply.send({
+        activeAccounts: accountsSnap.size,
+        activeCards: cardsSnap.size,
+        applicationsInProcess:
+          (metrics['pending'] || 0) +
+          (metrics['requested'] || 0) +
+          (metrics['observed'] || 0) +
+          (metrics['in_review'] || 0),
+        totalDisbursed,
+      });
+    } catch (error: any) {
+      fastify.log.error(error);
+      return reply.code(500).send({ error: error.message });
+    }
+  });
+
+  // Tendencias de solicitudes por mes
+  fastify.get<{
+    Params: { id: string };
+    Querystring: { period?: string };
+  }>('/:id/trends', {
+    preHandler: authenticate,
+    schema: {
+      description: 'Tendencia de solicitudes por mes',
+      tags: ['microfinancieras'],
+      security: [{ bearerAuth: [] }],
+      params: {
+        type: 'object',
+        properties: { id: { type: 'string' } },
+        required: ['id'],
+      },
+      querystring: {
+        type: 'object',
+        properties: {
+          period: { type: 'string' },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const { id } = request.params;
+    const period = request.query.period || 'last_6_months';
+    const months = period === 'last_12_months' ? 12 : 6;
+
+    try {
+      const now = new Date();
+      const start = new Date(now.getFullYear(), now.getMonth() - (months - 1), 1);
+
+      const snapshot = await db()
+        .collection('microfinancieras')
+        .doc(id)
+        .collection('loanApplications')
+        .where('createdAt', '>=', start)
+        .get();
+
+      const buckets: Record<string, { approved: number; rejected: number }> = {};
+      snapshot.docs.forEach((doc) => {
+        const data = doc.data();
+        const createdAt: any = data.createdAt;
+        const dateObj = createdAt?.toDate ? createdAt.toDate() : new Date(createdAt);
+        const key = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}`;
+
+        if (!buckets[key]) {
+          buckets[key] = { approved: 0, rejected: 0 };
+        }
+        if (data.status === 'approved' || data.status === 'disbursed') {
+          buckets[key].approved += 1;
+        } else if (data.status === 'rejected') {
+          buckets[key].rejected += 1;
+        }
+      });
+
+      // Asegurar meses faltantes con ceros
+      const dataPoints: { month: string; approved: number; rejected: number }[] = [];
+      for (let i = 0; i < months; i++) {
+        const d = new Date(now.getFullYear(), now.getMonth() - (months - 1) + i, 1);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        dataPoints.push({
+          month: key,
+          approved: buckets[key]?.approved || 0,
+          rejected: buckets[key]?.rejected || 0,
+        });
+      }
+
+      return reply.send({ data: dataPoints });
+    } catch (error: any) {
+      fastify.log.error(error);
+      return reply.code(500).send({ error: error.message });
+    }
+  });
+
+  // Top analistas por solicitudes asignadas
+  fastify.get<{
+    Params: { id: string };
+    Querystring: { limit?: number };
+  }>('/:id/analysts/top', {
+    preHandler: authenticate,
+    schema: {
+      description: 'Top analistas por solicitudes asignadas',
+      tags: ['microfinancieras'],
+      security: [{ bearerAuth: [] }],
+      params: {
+        type: 'object',
+        properties: { id: { type: 'string' } },
+        required: ['id'],
+      },
+      querystring: {
+        type: 'object',
+        properties: {
+          limit: { type: 'number' },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const { id } = request.params;
+    const limit = request.query.limit || 5;
+
+    try {
+      const snapshot = await db()
+        .collection('microfinancieras')
+        .doc(id)
+        .collection('loanApplications')
+        .where('assignedUserId', '!=', null)
+        .get();
+
+      const counts: Record<string, number> = {};
+      snapshot.docs.forEach((doc) => {
+        const analystId = doc.data().assignedUserId;
+        if (analystId) {
+          counts[analystId] = (counts[analystId] || 0) + 1;
+        }
+      });
+
+      // Enriquecer con nombres y tasas de aprobación
+      const userDocs = await Promise.all(
+        Object.keys(counts).map((uid) =>
+          db()
+            .collection('microfinancieras')
+            .doc(id)
+            .collection('users')
+            .doc(uid)
+            .get()
+        )
+      );
+
+      const approvalCounts: Record<string, { approved: number; total: number }> = {};
+      snapshot.docs.forEach((doc) => {
+        const data = doc.data();
+        const analystId = data.assignedUserId;
+        if (!analystId) return;
+        if (!approvalCounts[analystId]) {
+          approvalCounts[analystId] = { approved: 0, total: 0 };
+        }
+        approvalCounts[analystId].total += 1;
+        if (data.status === 'approved' || data.status === 'disbursed') {
+          approvalCounts[analystId].approved += 1;
+        }
+      });
+
+      const validAnalysts = Object.entries(counts)
+        .map(([analystId, total]) => {
+          const userDoc = userDocs.find((d) => d.id === analystId);
+          if (!userDoc || !userDoc.exists) return null; // omitir usuarios inexistentes
+          const userData = userDoc.data();
+          const approvalRate =
+            approvalCounts[analystId] && approvalCounts[analystId].total > 0
+              ? (approvalCounts[analystId].approved / approvalCounts[analystId].total) * 100
+              : 0;
+          return {
+            id: analystId,
+            name: userData?.displayName || userData?.email || analystId,
+            applicationsReviewed: total,
+            approvalRate,
+          };
+        })
+        .filter((a): a is { id: string; name: string; applicationsReviewed: number; approvalRate: number } => a !== null)
+        .sort((a, b) => b.applicationsReviewed - a.applicationsReviewed)
+        .slice(0, limit);
+
+      return reply.send({ analysts: validAnalysts });
+    } catch (error: any) {
+      fastify.log.error(error);
+      return reply.code(500).send({ error: error.message });
+    }
+  });
+
+  // Distribución de estados de solicitudes
+  fastify.get<{
+    Params: { id: string };
+  }>('/:id/applications/status-distribution', {
+    preHandler: authenticate,
+    schema: {
+      description: 'Distribución de estados de solicitudes',
+      tags: ['microfinancieras'],
+      security: [{ bearerAuth: [] }],
+      params: {
+        type: 'object',
+        properties: { id: { type: 'string' } },
+        required: ['id'],
+      },
+    },
+  }, async (request, reply) => {
+    const { id } = request.params;
+    try {
+      const snapshot = await db()
+        .collection('microfinancieras')
+        .doc(id)
+        .collection('loanApplications')
+        .get();
+
+      const distribution: Record<string, number> = {};
+      snapshot.docs.forEach((doc) => {
+        const status = (doc.data().status as string) || 'pending';
+        distribution[status] = (distribution[status] || 0) + 1;
+      });
+
+      const total = snapshot.size;
+      const items = Object.entries(distribution).map(([status, count]) => ({
+        status,
+        count,
+        percentage: total > 0 ? (count / total) * 100 : 0,
+      }));
+
+      return reply.send({ distribution: items, total });
+    } catch (error: any) {
+      fastify.log.error(error);
+      return reply.code(500).send({ error: error.message });
+    }
+  });
 }
-
-

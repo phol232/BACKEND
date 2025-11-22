@@ -89,7 +89,7 @@ async function start() {
           staticCSP: true,
           transformStaticCSP: (header) => header,
         });
-        
+
         console.log('✅ Swagger UI enabled for local development');
       } catch (error) {
         console.warn('⚠️ Failed to register Swagger UI:', error);
@@ -133,7 +133,7 @@ async function start() {
         <span class="link-title">📚 API Documentation</span>
         <span class="link-desc">Swagger UI - Explora todos los endpoints</span>
       </a>` : '';
-      
+
       return `
 <!DOCTYPE html>
 <html lang="es">
@@ -279,6 +279,10 @@ async function start() {
     await fastify.register(microfinancieraRoutes, { prefix: '/api/microfinancieras' });
     await fastify.register(productRoutes, { prefix: '/api/products' });
     await fastify.register(aiRoutes);
+    
+    // Payment Routes
+    const { paymentRoutes } = await import('./routes/payments');
+    await fastify.register(paymentRoutes, { prefix: '/api/payments' });
 
     // Start server
     await fastify.listen({ port: config.port, host: '0.0.0.0' });

@@ -34,8 +34,14 @@ export class UserService {
     if (userData?.primaryRoleId) {
       userRole = userData.primaryRoleId as 'admin' | 'analyst' | 'employee';
       console.log('📋 Rol desde primaryRoleId:', userRole);
+    } else if (userData?.roleIds && Array.isArray(userData.roleIds) && userData.roleIds.length > 0) {
+      if (userData.roleIds.includes('admin')) userRole = 'admin';
+      else if (userData.roleIds.includes('analyst')) userRole = 'analyst';
+      else if (userData.roleIds.includes('employee')) userRole = 'employee';
+      else if (userData.roleIds.includes('agent')) userRole = 'employee';
+      console.log('📋 Rol desde roleIds:', userRole);
     } else if (userData?.roles && Array.isArray(userData.roles) && userData.roles.length > 0) {
-      // Fallback a roles array si no hay primaryRoleId
+      // Fallback a roles array si no hay primaryRoleId ni roleIds
       if (userData.roles.includes('admin')) userRole = 'admin';
       else if (userData.roles.includes('analyst')) userRole = 'analyst';
       else if (userData.roles.includes('employee')) userRole = 'employee';
@@ -192,6 +198,11 @@ export class UserService {
     let userRole: 'admin' | 'analyst' | 'employee' = 'employee';
     if (userData?.primaryRoleId) {
       userRole = userData.primaryRoleId as 'admin' | 'analyst' | 'employee';
+    } else if (userData?.roleIds && Array.isArray(userData.roleIds) && userData.roleIds.length > 0) {
+      if (userData.roleIds.includes('admin')) userRole = 'admin';
+      else if (userData.roleIds.includes('analyst')) userRole = 'analyst';
+      else if (userData.roleIds.includes('employee')) userRole = 'employee';
+      else if (userData.roleIds.includes('agent')) userRole = 'employee';
     } else if (userData?.roles && Array.isArray(userData.roles) && userData.roles.length > 0) {
       if (userData.roles.includes('admin')) userRole = 'admin';
       else if (userData.roles.includes('analyst')) userRole = 'analyst';

@@ -240,4 +240,45 @@ export async function productRoutes(fastify: FastifyInstance) {
       return reply.code(500).send({ error: error.message });
     }
   });
+
+  // Delete product (admin only)
+  fastify.delete<{
+    Params: { microfinancieraId: string; productId: string };
+  }>('/:microfinancieraId/:productId', {
+    preHandler: [authenticate, requireRole(['admin'])],
+    schema: {
+      description: 'Eliminar producto de crédito (solo admin)',
+      tags: ['products'],
+      security: [{ bearerAuth: [] }],
+      params: {
+        type: 'object',
+        required: ['microfinancieraId', 'productId'],
+        properties: {
+          microfinancieraId: { type: 'string' },
+          productId: { type: 'string' },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const { microfinancieraId, productId } = request.params;
+
+    try {
+      const productRef = db()
+        .collection('microfinancieras')
+        .doc(microfinancieraId)
+        .collection('products')
+        .doc(productId);
+
+      const existing = await productRef.get();
+      if (!existing.exists) {
+        return reply.code(404).send({ error: 'Producto no encontrado' });
+      }
+
+      await productRef.delete();
+      return reply.send({ success: true });
+    } catch (error: any) {
+      fastify.log.error(error);
+      return reply.code(500).send({ error: error.message });
+    }
+  });
 }
