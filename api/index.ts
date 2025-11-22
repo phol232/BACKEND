@@ -19,6 +19,7 @@ import { microfinancieraRoutes } from '../src/routes/microfinancieras';
 import { aiRoutes } from '../src/routes/ai';
 import { productRoutes } from '../src/routes/products';
 import { paymentRoutes } from '../src/routes/payments';
+import { stripeRoutes } from '../src/routes/stripe';
 
 // Initialize Firebase once
 initializeFirebase();
@@ -228,6 +229,7 @@ async function setup() {
   await fastify.register(microfinancieraRoutes, { prefix: '/api/microfinancieras' });
   await fastify.register(productRoutes, { prefix: '/api/products' });
   await fastify.register(paymentRoutes, { prefix: '/api/payments' });
+  await fastify.register(stripeRoutes, { prefix: '/api/stripe' });
   await fastify.register(aiRoutes);
 
   await fastify.ready();
