@@ -9,6 +9,7 @@ export interface User {
   provider: 'google' | 'email';
   status: 'pending' | 'approved' | 'rejected';
   role: 'admin' | 'analyst' | 'employee';
+  microfinancieraId?: string;
   createdAt: Timestamp;
   updatedAt: Timestamp;
   approvedAt?: Timestamp;

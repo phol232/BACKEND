@@ -22,6 +22,7 @@ import { cardRoutes } from './routes/cards';
 import { workerRoutes } from './routes/workers';
 import { microfinancieraRoutes } from './routes/microfinancieras';
 import { aiRoutes } from './routes/ai';
+import { productRoutes } from './routes/products';
 
 const fastify = Fastify({
   logger: {
@@ -276,6 +277,7 @@ async function start() {
     await fastify.register(cardRoutes, { prefix: '/api/cards' });
     await fastify.register(workerRoutes, { prefix: '/api/workers' });
     await fastify.register(microfinancieraRoutes, { prefix: '/api/microfinancieras' });
+    await fastify.register(productRoutes, { prefix: '/api/products' });
     await fastify.register(aiRoutes);
 
     // Start server

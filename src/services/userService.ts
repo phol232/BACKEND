@@ -53,6 +53,7 @@ export class UserService {
                 userData?.linkedProviders?.includes('google') ? 'google' : 'email',
       status: userData?.status || 'pending',
       role: userRole,
+      microfinancieraId,
       createdAt: userData?.createdAt || admin.firestore.Timestamp.fromDate(new Date()),
       updatedAt: userData?.updatedAt || admin.firestore.Timestamp.fromDate(new Date()),
       approvedAt: userData?.approvedAt,
@@ -87,9 +88,10 @@ export class UserService {
       if (!userQuery.empty) {
         const userDoc = userQuery.docs[0];
         const userData = userDoc.data();
+        const microfinancieraId = userDoc.ref.parent.parent?.id;
         console.log('✅ Usuario encontrado via collectionGroup');
         
-        const user = this.mapUserData(userData, uid);
+        const user = this.mapUserData(userData, uid, microfinancieraId);
         userCache.set(cacheKey, user);
         console.log('💾 Usuario guardado en caché');
         
@@ -115,7 +117,7 @@ export class UserService {
             if (userDoc.exists) {
               console.log('✅ Usuario encontrado en microfinanciera:', mfId);
               const userData = userDoc.data();
-              const user = this.mapUserData(userData, uid);
+              const user = this.mapUserData(userData, uid, mfId);
               userCache.set(cacheKey, user);
               return user;
             }
@@ -157,7 +159,35 @@ export class UserService {
     return null;
   }
 
-  private mapUserData(userData: any, uid: string): User {
+  public async listUsers(
+    microfinancieraId: string,
+    status?: 'pending' | 'approved' | 'rejected',
+    limit = 200
+  ): Promise<User[]> {
+    if (!microfinancieraId) {
+      throw new Error('microfinancieraId es obligatorio');
+    }
+
+    let query: FirebaseFirestore.Query<FirebaseFirestore.DocumentData> = db()
+      .collection('microfinancieras')
+      .doc(microfinancieraId)
+      .collection('users')
+      .orderBy('createdAt', 'desc');
+
+    if (status) {
+      query = query.where('status', '==', status);
+    }
+
+    if (limit) {
+      query = query.limit(limit);
+    }
+
+    const snapshot = await query.get();
+
+    return snapshot.docs.map((doc) => this.mapUserData(doc.data(), doc.id));
+  }
+
+  private mapUserData(userData: any, uid: string, microfinancieraId?: string): User {
     // Priorizar primaryRoleId sobre roles array
     let userRole: 'admin' | 'analyst' | 'employee' = 'employee';
     if (userData?.primaryRoleId) {
@@ -179,6 +209,7 @@ export class UserService {
                 userData?.linkedProviders?.includes('google') ? 'google' : 'email',
       status: userData?.status || 'pending',
       role: userRole,
+      microfinancieraId,
       createdAt: userData?.createdAt || admin.firestore.Timestamp.fromDate(new Date()),
       updatedAt: userData?.updatedAt || admin.firestore.Timestamp.fromDate(new Date()),
       approvedAt: userData?.approvedAt,
@@ -385,34 +416,65 @@ Sistema CREDITO-EXPRESS
     });
   }
 
-  private async updateUserInMicrofinanciera(uid: string, updates: any): Promise<void> {
-    // Usar collectionGroup para encontrar el usuario más rápido
-    const userQuery = await db()
-      .collectionGroup('users')
-      .where('userId', '==', uid)
-      .limit(1)
-      .get();
-    
-    if (!userQuery.empty) {
-      const userDoc = userQuery.docs[0];
-      console.log('📝 Actualizando usuario via collectionGroup');
-      await userDoc.ref.update(updates);
-      
-      // Invalidar caché
-      const cacheKey = `user_${uid}`;
-      userCache.del(cacheKey);
-      console.log('🗑️ Caché invalidado para usuario:', uid);
-      return;
+  private async updateUserInMicrofinanciera(
+    uid: string,
+    updates: any,
+    microfinancieraId?: string
+  ): Promise<void> {
+    const cacheKey = `user_${uid}`;
+    const knownMfIds = microfinancieraId ? [microfinancieraId] : ['mf_demo_001', 'S1'];
+
+    // 1) Intentar ruta directa si conocemos microfinanciera
+    for (const mfId of knownMfIds) {
+      try {
+        const userRef = db()
+          .collection('microfinancieras')
+          .doc(mfId)
+          .collection('users')
+          .doc(uid);
+
+        const existing = await userRef.get();
+        if (existing.exists) {
+          console.log('📝 Actualizando usuario en microfinanciera:', mfId);
+          await userRef.update(updates);
+          userCache.del(cacheKey);
+          console.log('🗑️ Caché invalidado para usuario:', uid);
+          return;
+        }
+      } catch (error) {
+        console.log('⚠️ No se pudo actualizar en', mfId, error);
+      }
     }
-    
-    // Fallback a colección global
+
+    // 2) Fallback usando collectionGroup (puede requerir índice)
+    try {
+      const userQuery = await db()
+        .collectionGroup('users')
+        .where('userId', '==', uid)
+        .limit(1)
+        .get();
+
+      if (!userQuery.empty) {
+        const userDoc = userQuery.docs[0];
+        console.log('📝 Actualizando usuario via collectionGroup');
+        await userDoc.ref.update(updates);
+        userCache.del(cacheKey);
+        console.log('🗑️ Caché invalidado para usuario:', uid);
+        return;
+      }
+    } catch (error: any) {
+      if (error.message?.includes('FAILED_PRECONDITION') || error.message?.includes('index')) {
+        console.log('⚠️ Índice requerido para collectionGroup; ya se intentó ruta directa.');
+      } else {
+        throw error;
+      }
+    }
+
+    // 3) Fallback a colección global
     const globalUserDoc = await db().collection('users').doc(uid).get();
     if (globalUserDoc.exists) {
       console.log('📝 Actualizando usuario en colección global');
       await db().collection('users').doc(uid).update(updates);
-      
-      // Invalidar caché
-      const cacheKey = `user_${uid}`;
       userCache.del(cacheKey);
       console.log('🗑️ Caché invalidado para usuario:', uid);
     } else {
@@ -625,7 +687,7 @@ Este es un email automático, por favor no respondas a este mensaje.
       await this.updateUserInMicrofinanciera(uid, {
         status: 'pending',
         updatedAt: admin.firestore.Timestamp.fromDate(new Date()),
-      });
+      }, user.microfinancieraId);
     } else if (user.status !== 'pending') {
       throw new Error(`Usuario no está pendiente. Estado actual: ${user.status}`);
     }
@@ -635,7 +697,7 @@ Este es un email automático, por favor no respondas a este mensaje.
       status: 'approved',
       approvedAt: admin.firestore.Timestamp.fromDate(new Date()),
       updatedAt: admin.firestore.Timestamp.fromDate(new Date()),
-    });
+    }, user.microfinancieraId);
     
     // Enviar email de confirmación de aprobación
     console.log('📧 Enviando email de confirmación de aprobación...');
@@ -659,7 +721,7 @@ Este es un email automático, por favor no respondas a este mensaje.
       await this.updateUserInMicrofinanciera(uid, {
         status: 'pending',
         updatedAt: admin.firestore.Timestamp.fromDate(new Date()),
-      });
+      }, user.microfinancieraId);
     } else if (user.status !== 'pending') {
       throw new Error(`Usuario no está pendiente. Estado actual: ${user.status}`);
     }
@@ -670,7 +732,7 @@ Este es un email automático, por favor no respondas a este mensaje.
       rejectedAt: admin.firestore.Timestamp.fromDate(new Date()),
       updatedAt: admin.firestore.Timestamp.fromDate(new Date()),
       rejectionReason: reason,
-    });
+    }, user.microfinancieraId);
     console.log('❌ Usuario rechazado exitosamente:', uid);
   }
 

@@ -17,6 +17,7 @@ import { cardRoutes } from '../src/routes/cards';
 import { workerRoutes } from '../src/routes/workers';
 import { microfinancieraRoutes } from '../src/routes/microfinancieras';
 import { aiRoutes } from '../src/routes/ai';
+import { productRoutes } from '../src/routes/products';
 
 // Initialize Firebase once
 initializeFirebase();
@@ -224,6 +225,7 @@ async function setup() {
   await fastify.register(cardRoutes, { prefix: '/api/cards' });
   await fastify.register(workerRoutes, { prefix: '/api/workers' });
   await fastify.register(microfinancieraRoutes, { prefix: '/api/microfinancieras' });
+  await fastify.register(productRoutes, { prefix: '/api/products' });
   await fastify.register(aiRoutes);
 
   await fastify.ready();

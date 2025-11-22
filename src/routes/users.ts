@@ -1,5 +1,6 @@
 import { FastifyInstance, FastifyRequest } from 'fastify';
 import { authenticate } from '../middleware/auth';
+import { requireRole } from '../middleware/roleAuth';
 import { UserService } from '../services/userService';
 import { EmailService } from '../services/emailService';
 
@@ -67,6 +68,45 @@ export async function userRoutes(fastify: FastifyInstance) {
         return reply.code(404).send({ error: 'User not found' });
       }
       return reply.send(userData);
+    } catch (error: any) {
+      fastify.log.error(error);
+      return reply.code(500).send({ error: error.message });
+    }
+  });
+
+  // List users for a microfinanciera (admin only)
+  fastify.get<{
+    Querystring: {
+      microfinancieraId: string;
+      status?: 'pending' | 'approved' | 'rejected';
+      limit?: number;
+    };
+  }>('/list', {
+    preHandler: [authenticate, requireRole(['admin'])],
+    schema: {
+      description: 'Listar usuarios registrados para una microfinanciera (solo admin)',
+      tags: ['users'],
+      security: [{ bearerAuth: [] }],
+      querystring: {
+        type: 'object',
+        required: ['microfinancieraId'],
+        properties: {
+          microfinancieraId: { type: 'string' },
+          status: { type: 'string', enum: ['pending', 'approved', 'rejected'] },
+          limit: { type: 'number' },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    try {
+      const { microfinancieraId, status, limit } = request.query;
+
+      if (!microfinancieraId) {
+        return reply.code(400).send({ error: 'microfinancieraId is required' });
+      }
+
+      const users = await userService.listUsers(microfinancieraId, status, limit);
+      return reply.send({ users });
     } catch (error: any) {
       fastify.log.error(error);
       return reply.code(500).send({ error: error.message });
