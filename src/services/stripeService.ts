@@ -227,9 +227,14 @@ export class StripeService {
       const transactionData = {
         type: 'payment',
         accountId: params.accountId,
+        refType: 'account', // Para que la app pueda filtrar por cuenta
+        refId: params.accountId, // ID de la cuenta Stripe
         loanId: params.loanId,
         installmentId: params.installmentId,
         amount: params.amount,
+        debit: params.amount, // Débito (salida de dinero)
+        credit: 0, // Sin crédito
+        currency: 'PEN',
         paymentMethod: 'stripe',
         stripeSessionId: params.stripeSessionId,
         stripePaymentIntent: params.stripePaymentIntent,
