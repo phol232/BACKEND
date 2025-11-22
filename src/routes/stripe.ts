@@ -87,6 +87,107 @@ export async function stripeRoutes(fastify: FastifyInstance) {
   });
 
   /**
+   * Validar y procesar pago manualmente
+   */
+  fastify.post('/validate-payment', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const body = request.body as any;
+      const { sessionId } = body;
+
+      if (!sessionId) {
+        return reply.code(400).send({ error: 'Session ID es requerido' });
+      }
+
+      console.log('🔍 Validando pago manual:', sessionId);
+
+      // Verificar la sesión en Stripe
+      const session = await stripeService.verifyPaymentSession(sessionId);
+
+      if (session.payment_status !== 'paid') {
+        return reply.code(400).send({ 
+          error: 'El pago no está completado',
+          paymentStatus: session.payment_status 
+        });
+      }
+
+      // Extraer metadata
+      const metadata = session.metadata || {};
+      const microfinancieraId = metadata.microfinancieraId;
+      const accountId = metadata.accountId;
+      const installmentsData = metadata.installments;
+
+      if (!microfinancieraId || !accountId || !installmentsData) {
+        return reply.code(400).send({ 
+          error: 'Metadata incompleta en la sesión',
+          metadata 
+        });
+      }
+
+      // Parsear installments
+      const installments = JSON.parse(installmentsData);
+
+      // Procesar el pago
+      const result = await stripeService.processCompletedPayment({
+        sessionId,
+        microfinancieraId,
+        accountId,
+        installments,
+      });
+
+      console.log('✅ Pago validado y procesado exitosamente');
+
+      return reply.send({
+        paymentStatus: session.payment_status,
+        ...result,
+      });
+    } catch (error: any) {
+      console.error('❌ Error al validar pago:', error);
+      return reply.code(500).send({ error: error.message || 'Error al validar el pago' });
+    }
+  });
+
+  /**
+   * Buscar sesiones de pago por fecha/hora
+   */
+  fastify.get('/search-sessions', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const query = request.query as any;
+      const { startTime, endTime } = query;
+
+      if (!startTime) {
+        return reply.code(400).send({ error: 'startTime es requerido (timestamp en segundos)' });
+      }
+
+      const stripe = new Stripe(process.env.API_STRIPE_PRIV || '', {
+        apiVersion: '2025-02-24.acacia',
+      });
+
+      // Buscar sesiones en el rango de tiempo
+      const sessions = await stripe.checkout.sessions.list({
+        created: {
+          gte: parseInt(startTime),
+          ...(endTime && { lte: parseInt(endTime) }),
+        },
+        limit: 20,
+      });
+
+      const sessionsData = sessions.data.map(session => ({
+        id: session.id,
+        amount: session.amount_total ? session.amount_total / 100 : 0,
+        currency: session.currency,
+        paymentStatus: session.payment_status,
+        created: new Date(session.created * 1000).toISOString(),
+        metadata: session.metadata,
+      }));
+
+      return reply.send({ sessions: sessionsData });
+    } catch (error: any) {
+      console.error('❌ Error al buscar sesiones:', error);
+      return reply.code(500).send({ error: 'Error al buscar sesiones' });
+    }
+  });
+
+  /**
    * Crear sesión de pago de Stripe (opcional, si quieres crear el link dinámicamente)
    */
   fastify.post('/create-checkout-session', async (request: FastifyRequest, reply: FastifyReply) => {
@@ -118,8 +219,8 @@ export async function stripeRoutes(fastify: FastifyInstance) {
           },
         ],
         mode: 'payment',
-        success_url: 'https://stripe.com/success',
-        cancel_url: 'https://stripe.com/cancel',
+        success_url: `${process.env.FRONTEND_URL || 'https://financiera-mocha.vercel.app'}/validate-payment?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${process.env.FRONTEND_URL || 'https://financiera-mocha.vercel.app'}/validate-payment?canceled=true`,
         metadata: {
           microfinancieraId,
           accountId,
