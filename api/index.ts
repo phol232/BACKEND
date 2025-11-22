@@ -2,6 +2,7 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
+import rawBody from 'fastify-raw-body';
 import { config } from '../src/config';
 import { initializeFirebase } from '../src/config/firebase';
 import { applicationRoutes } from '../src/routes/applications';
@@ -36,6 +37,15 @@ async function setup() {
   const isVercel = process.env.VERCEL === '1' || process.env.VERCEL_ENV;
   const isProduction = config.nodeEnv === 'production';
   const shouldEnableSwagger = !isVercel && !isProduction && config.nodeEnv === 'development';
+
+  // Raw Body plugin (necesario para webhooks de Stripe)
+  await fastify.register(rawBody, {
+    field: 'rawBody',
+    global: false,
+    encoding: 'utf8',
+    runFirst: true,
+    routes: ['/api/stripe/webhook'], // Solo para el webhook de Stripe
+  });
 
   // CORS
   await fastify.register(cors, {
