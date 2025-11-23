@@ -80,7 +80,7 @@ export async function paymentRoutes(fastify: FastifyInstance) {
           description,
           loanId,
           accountId,
-          culqiResponse: charge,
+          stripeResponse: charge,
         });
 
         return reply.send({
