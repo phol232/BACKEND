@@ -1,6 +1,8 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { StripeService } from '../services/stripeService';
 import Stripe from 'stripe';
+import { db } from '../config/firebase';
+import { Timestamp } from 'firebase-admin/firestore';
 
 export async function stripeRoutes(fastify: FastifyInstance) {
   const stripeService = new StripeService();
@@ -81,16 +83,115 @@ export async function stripeRoutes(fastify: FastifyInstance) {
           const installmentsData = metadata.installments;
 
           if (microfinancieraId && accountId && installmentsData) {
-            // Parsear installments
-            const installments = JSON.parse(installmentsData);
+            try {
+              // Parsear installments
+              const installments = JSON.parse(installmentsData);
 
-            // Procesar el pago usando el PaymentIntent ID como sessionId
-            await stripeService.processCompletedPayment({
-              sessionId: paymentIntent.id,
-              microfinancieraId,
-              accountId,
-              installments,
-            });
+              // Procesar el pago directamente sin verificar sesión
+              // (para PaymentIntent no hay sesión de checkout)
+              console.log('💳 Procesando PaymentIntent:', paymentIntent.id);
+
+              // Obtener userId del primer installment
+              const firstInstallment = installments[0];
+              const loanDoc = await db()
+                .collection('microfinancieras')
+                .doc(microfinancieraId)
+                .collection('loanApplications')
+                .doc(firstInstallment.loanId)
+                .get();
+
+              if (!loanDoc.exists) {
+                throw new Error('Préstamo no encontrado');
+              }
+
+              const userId = loanDoc.data()?.userId;
+              if (!userId) {
+                throw new Error('Usuario no encontrado en el préstamo');
+              }
+
+              // Obtener o crear cuenta especial de Stripe
+              const accountsSnapshot = await db()
+                .collection('microfinancieras')
+                .doc(microfinancieraId)
+                .collection('accounts')
+                .where('userId', '==', userId)
+                .where('accountType', '==', 'stripe')
+                .limit(1)
+                .get();
+
+              let stripeAccountId: string;
+              if (!accountsSnapshot.empty) {
+                stripeAccountId = accountsSnapshot.docs[0].id;
+                console.log('✅ Cuenta Stripe existente:', stripeAccountId);
+              } else {
+                // Crear cuenta Stripe
+                const accountData = {
+                  userId,
+                  accountType: 'stripe',
+                  accountNumber: `STRIPE-${Date.now()}`,
+                  balance: 0,
+                  currency: 'PEN',
+                  status: 'active',
+                  description: 'Cuenta para pagos con Stripe',
+                  createdAt: Timestamp.now(),
+                  updatedAt: Timestamp.now(),
+                };
+                const accountRef = await db()
+                  .collection('microfinancieras')
+                  .doc(microfinancieraId)
+                  .collection('accounts')
+                  .add(accountData);
+                stripeAccountId = accountRef.id;
+                console.log('✅ Nueva cuenta Stripe creada:', stripeAccountId);
+              }
+
+              // Procesar cada cuota
+              for (const installment of installments) {
+                // Marcar cuota como pagada
+                await db()
+                  .collection('microfinancieras')
+                  .doc(microfinancieraId)
+                  .collection('loanApplications')
+                  .doc(installment.loanId)
+                  .collection('repaymentSchedule')
+                  .doc(installment.installmentId)
+                  .update({
+                    status: 'paid',
+                    paidAmount: installment.amount,
+                    paidAt: Timestamp.now(),
+                    updatedAt: Timestamp.now(),
+                  });
+
+                // Registrar transacción
+                await db()
+                  .collection('microfinancieras')
+                  .doc(microfinancieraId)
+                  .collection('transactions')
+                  .add({
+                    type: 'payment',
+                    accountId: stripeAccountId,
+                    refType: 'account',
+                    refId: stripeAccountId,
+                    loanId: installment.loanId,
+                    installmentId: installment.installmentId,
+                    amount: installment.amount,
+                    debit: installment.amount,
+                    credit: 0,
+                    currency: 'PEN',
+                    paymentMethod: 'stripe',
+                    stripePaymentIntent: paymentIntent.id,
+                    status: 'completed',
+                    createdAt: Timestamp.now(),
+                    updatedAt: Timestamp.now(),
+                  });
+
+                console.log('✅ Cuota procesada:', installment.installmentId);
+              }
+
+              console.log('✅ PaymentIntent procesado exitosamente');
+            } catch (error: any) {
+              console.error('❌ Error procesando PaymentIntent:', error);
+            }
           }
           
           break;
