@@ -110,11 +110,18 @@ export class StripeService {
 
       if (!existingTransaction.empty) {
         console.log('⚠️ Pago ya procesado anteriormente para sessionId:', params.sessionId);
+        const transactions = existingTransaction.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        
+        // Calcular el total desde las transacciones existentes
+        const totalAmount = transactions.reduce((sum: number, tx: any) => {
+          return sum + (tx.amount || 0);
+        }, 0);
+        
         return {
           success: true,
           alreadyProcessed: true,
-          transactions: existingTransaction.docs.map(doc => ({ id: doc.id, ...doc.data() })),
-          totalAmount: 0,
+          transactions,
+          totalAmount,
         };
       }
 
