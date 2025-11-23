@@ -21,7 +21,7 @@ interface RecordTransactionParams {
   description: string;
   loanId?: string;
   accountId?: string;
-  culqiResponse: any;
+  stripeResponse: any;
 }
 
 interface GetTransactionHistoryParams {
@@ -33,42 +33,42 @@ interface GetTransactionHistoryParams {
 }
 
 export class PaymentService {
-  private culqiSecretKey: string;
-  private culqiApiUrl = 'https://api.culqi.com/v2';
+  private stripeSecretKey: string;
+  private stripeApiUrl = 'https://api.stripe.com/v1';
 
   constructor() {
-    this.culqiSecretKey = process.env.API_CULQUI_PRIV || '';
+    this.stripeSecretKey = process.env.STRIPE_SECRET_KEY || '';
     
-    if (!this.culqiSecretKey) {
-      console.error('⚠️ API_CULQUI_PRIV no está configurada en las variables de entorno');
+    if (!this.stripeSecretKey) {
+      console.error('⚠️ STRIPE_SECRET_KEY no está configurada en las variables de entorno');
     }
   }
 
   /**
-   * Crear un cargo en Culqi
+   * Crear un cargo en Stripe
    */
   async createCharge(params: CreateChargeParams) {
     try {
-      console.log('💳 Creando cargo en Culqi:', {
+      console.log('💳 Creando cargo en Stripe:', {
         amount: params.amount,
         currency: params.currency_code,
         email: params.email,
       });
 
       const response = await axios.post(
-        `${this.culqiApiUrl}/charges`,
+        `${this.stripeApiUrl}/charges`,
         {
           amount: params.amount,
-          currency_code: params.currency_code,
+          currency: params.currency_code,
           description: params.description,
-          email: params.email,
-          source_id: params.tokenId,
+          receipt_email: params.email,
+          source: params.tokenId,
           metadata: params.metadata || {},
         },
         {
           headers: {
-            'Authorization': `Bearer ${this.culqiSecretKey}`,
-            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${this.stripeSecretKey}`,
+            'Content-Type': 'application/x-www-form-urlencoded',
           },
         }
       );
@@ -76,8 +76,8 @@ export class PaymentService {
       console.log('✅ Cargo creado exitosamente:', response.data.id);
       return response.data;
     } catch (error: any) {
-      console.error('❌ Error al crear cargo en Culqi:', error.response?.data || error.message);
-      throw new Error(error.response?.data?.user_message || 'Error al procesar el pago');
+      console.error('❌ Error al crear cargo en Stripe:', error.response?.data || error.message);
+      throw new Error(error.response?.data?.error?.message || 'Error al procesar el pago');
     }
   }
 
@@ -87,10 +87,10 @@ export class PaymentService {
   async getCharge(chargeId: string) {
     try {
       const response = await axios.get(
-        `${this.culqiApiUrl}/charges/${chargeId}`,
+        `${this.stripeApiUrl}/charges/${chargeId}`,
         {
           headers: {
-            'Authorization': `Bearer ${this.culqiSecretKey}`,
+            'Authorization': `Bearer ${this.stripeSecretKey}`,
           },
         }
       );
@@ -124,8 +124,8 @@ export class PaymentService {
           description: params.description,
           loanId: params.loanId || null,
           accountId: params.accountId || null,
-          paymentMethod: 'culqi',
-          culqiResponse: params.culqiResponse,
+          paymentMethod: 'stripe',
+          stripeResponse: params.culqiResponse,
         },
       };
 
