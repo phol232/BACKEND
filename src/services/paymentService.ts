@@ -37,10 +37,10 @@ export class PaymentService {
   private stripeApiUrl = 'https://api.stripe.com/v1';
 
   constructor() {
-    this.stripeSecretKey = process.env.STRIPE_SECRET_KEY || '';
+    this.stripeSecretKey = process.env.API_STRIPE_PRIV || process.env.STRIPE_SECRET_KEY || '';
     
     if (!this.stripeSecretKey) {
-      console.error('⚠️ STRIPE_SECRET_KEY no está configurada en las variables de entorno');
+      console.error('⚠️ API_STRIPE_PRIV no está configurada en las variables de entorno');
     }
   }
 
