@@ -18,18 +18,27 @@ export async function stripeRoutes(fastify: FastifyInstance) {
       }
 
       // Obtener el raw body
-      // En Vercel con fastify-raw-body, el raw body está en request.rawBody
+      // El plugin fastify-raw-body guarda el buffer en request.rawBody
       let payload: string;
       
       if ((request as any).rawBody) {
-        payload = (request as any).rawBody;
+        // Si rawBody es un Buffer, convertirlo a string
+        const rawBody = (request as any).rawBody;
+        payload = Buffer.isBuffer(rawBody) ? rawBody.toString('utf8') : rawBody;
+        console.log('✅ Using rawBody from plugin');
       } else if (Buffer.isBuffer(request.body)) {
         payload = request.body.toString('utf8');
+        console.log('✅ Using Buffer body');
       } else if (typeof request.body === 'string') {
         payload = request.body;
+        console.log('✅ Using string body');
       } else {
         payload = JSON.stringify(request.body);
+        console.log('⚠️ Using JSON.stringify on body');
       }
+      
+      console.log('📝 Payload length:', payload.length);
+      console.log('📝 Signature:', signature);
 
       // Verificar la firma del webhook
       let event: Stripe.Event;

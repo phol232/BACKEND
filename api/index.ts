@@ -42,7 +42,7 @@ async function setup() {
   await fastify.register(rawBody, {
     field: 'rawBody',
     global: false,
-    encoding: 'utf8',
+    encoding: false, // Mantener como Buffer
     runFirst: true,
     routes: ['/api/stripe/webhook'], // Solo para el webhook de Stripe
   });
