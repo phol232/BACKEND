@@ -99,6 +99,25 @@ export class StripeService {
     try {
       console.log('💳 Procesando pago de Stripe:', params.sessionId);
 
+      // Verificar si ya se procesó esta sesión (idempotencia)
+      const existingTransaction = await db()
+        .collection('microfinancieras')
+        .doc(params.microfinancieraId)
+        .collection('transactions')
+        .where('stripeSessionId', '==', params.sessionId)
+        .limit(1)
+        .get();
+
+      if (!existingTransaction.empty) {
+        console.log('⚠️ Pago ya procesado anteriormente para sessionId:', params.sessionId);
+        return {
+          success: true,
+          alreadyProcessed: true,
+          transactions: existingTransaction.docs.map(doc => ({ id: doc.id, ...doc.data() })),
+          totalAmount: 0,
+        };
+      }
+
       // Verificar la sesión
       const session = await this.verifyPaymentSession(params.sessionId);
 
