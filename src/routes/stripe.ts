@@ -73,6 +73,26 @@ export async function stripeRoutes(fastify: FastifyInstance) {
         case 'payment_intent.succeeded': {
           const paymentIntent = event.data.object as Stripe.PaymentIntent;
           console.log('💰 PaymentIntent exitoso:', paymentIntent.id);
+          
+          // Extraer metadata del paymentIntent
+          const metadata = paymentIntent.metadata || {};
+          const microfinancieraId = metadata.microfinancieraId;
+          const accountId = metadata.accountId;
+          const installmentsData = metadata.installments;
+
+          if (microfinancieraId && accountId && installmentsData) {
+            // Parsear installments
+            const installments = JSON.parse(installmentsData);
+
+            // Procesar el pago usando el PaymentIntent ID como sessionId
+            await stripeService.processCompletedPayment({
+              sessionId: paymentIntent.id,
+              microfinancieraId,
+              accountId,
+              installments,
+            });
+          }
+          
           break;
         }
 
@@ -195,7 +215,66 @@ export async function stripeRoutes(fastify: FastifyInstance) {
   });
 
   /**
-   * Crear sesión de pago de Stripe (opcional, si quieres crear el link dinámicamente)
+   * Crear PaymentIntent para usar con Payment Sheet (SDK móvil)
+   */
+  fastify.post('/create-payment-intent', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const body = request.body as any;
+      const { amount, microfinancieraId, accountId, installments } = body;
+
+      if (!amount || !microfinancieraId || !accountId || !installments) {
+        return reply.code(400).send({ error: 'Faltan parámetros requeridos' });
+      }
+
+      const stripe = new Stripe(process.env.API_STRIPE_PRIV || '', {
+        apiVersion: '2025-02-24.acacia',
+      });
+
+      // Crear Customer (opcional, pero recomendado para guardar métodos de pago)
+      const customer = await stripe.customers.create({
+        metadata: {
+          microfinancieraId,
+          accountId,
+        },
+      });
+
+      // Crear Ephemeral Key para el customer
+      const ephemeralKey = await stripe.ephemeralKeys.create(
+        { customer: customer.id },
+        { apiVersion: '2025-02-24.acacia' }
+      );
+
+      // Crear PaymentIntent
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: Math.round(amount * 100), // Convertir a centavos
+        currency: 'pen',
+        customer: customer.id,
+        automatic_payment_methods: {
+          enabled: true,
+        },
+        metadata: {
+          microfinancieraId,
+          accountId,
+          installments: JSON.stringify(installments),
+        },
+      });
+
+      console.log('✅ PaymentIntent creado:', paymentIntent.id);
+
+      return reply.send({
+        paymentIntent: paymentIntent.client_secret,
+        ephemeralKey: ephemeralKey.secret,
+        customer: customer.id,
+        publishableKey: process.env.API_STRIPE_PUBLIC || '',
+      });
+    } catch (error: any) {
+      console.error('❌ Error al crear PaymentIntent:', error);
+      return reply.code(500).send({ error: 'Error al crear intención de pago' });
+    }
+  });
+
+  /**
+   * Crear sesión de pago de Stripe (para web/checkout externo)
    */
   fastify.post('/create-checkout-session', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
