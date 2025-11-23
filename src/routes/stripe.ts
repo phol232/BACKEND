@@ -226,9 +226,9 @@ export async function stripeRoutes(fastify: FastifyInstance) {
           },
         ],
         mode: 'payment',
-        // No incluir success_url para que Stripe muestre su página de confirmación
-        // El webhook procesará el pago automáticamente
-        // success_url: `${process.env.FRONTEND_URL || 'https://financiera-mocha.vercel.app'}/validate-payment?session_id={CHECKOUT_SESSION_ID}`,
+        ui_mode: 'hosted',
+        // Stripe mostrará su página de confirmación antes de redirigir
+        success_url: `${process.env.FRONTEND_URL || 'https://financiera-mocha.vercel.app'}/validate-payment?session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${process.env.FRONTEND_URL || 'https://financiera-mocha.vercel.app'}/validate-payment?canceled=true`,
         metadata: {
           microfinancieraId,
