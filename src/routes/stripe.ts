@@ -186,7 +186,7 @@ export async function stripeRoutes(fastify: FastifyInstance) {
       }
 
       const stripe = new Stripe(process.env.API_STRIPE_PRIV || '', {
-        apiVersion: '2025-02-24.acacia',
+        apiVersion: '2025-11-17.clover',
       });
 
       // Buscar sesiones en el rango de tiempo
@@ -227,7 +227,7 @@ export async function stripeRoutes(fastify: FastifyInstance) {
       }
 
       const stripe = new Stripe(process.env.API_STRIPE_PRIV || '', {
-        apiVersion: '2025-02-24.acacia',
+        apiVersion: '2025-11-17.clover',
       });
 
       // Crear Customer (opcional, pero recomendado para guardar métodos de pago)
@@ -241,7 +241,7 @@ export async function stripeRoutes(fastify: FastifyInstance) {
       // Crear Ephemeral Key para el customer
       const ephemeralKey = await stripe.ephemeralKeys.create(
         { customer: customer.id },
-        { apiVersion: '2025-02-24.acacia' }
+        { apiVersion: '2025-11-17.clover' }
       );
 
       // Crear PaymentIntent
@@ -286,7 +286,7 @@ export async function stripeRoutes(fastify: FastifyInstance) {
       }
 
       const stripe = new Stripe(process.env.API_STRIPE_PRIV || '', {
-        apiVersion: '2025-02-24.acacia',
+        apiVersion: '2025-11-17.clover',
       });
 
       const session = await stripe.checkout.sessions.create({
