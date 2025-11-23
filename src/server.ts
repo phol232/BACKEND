@@ -284,6 +284,10 @@ async function start() {
     const { paymentRoutes } = await import('./routes/payments');
     await fastify.register(paymentRoutes, { prefix: '/api/payments' });
 
+    // Stripe Routes (with raw body support for webhooks)
+    const { stripeRoutes } = await import('./routes/stripe');
+    await fastify.register(stripeRoutes, { prefix: '/api/stripe' });
+
     // Start server
     await fastify.listen({ port: config.port, host: '0.0.0.0' });
 

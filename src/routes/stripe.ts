@@ -9,11 +9,7 @@ export async function stripeRoutes(fastify: FastifyInstance) {
    * Webhook de Stripe
    * Este endpoint recibe notificaciones de Stripe cuando ocurren eventos
    */
-  fastify.post('/webhook', {
-    config: {
-      rawBody: true, // Necesario para verificar la firma de Stripe
-    },
-  }, async (request: FastifyRequest, reply: FastifyReply) => {
+  fastify.post('/webhook', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const signature = request.headers['stripe-signature'] as string;
       
@@ -21,8 +17,19 @@ export async function stripeRoutes(fastify: FastifyInstance) {
         return reply.code(400).send({ error: 'Falta la firma del webhook' });
       }
 
-      // Obtener el raw body (necesario para verificar la firma)
-      const payload = (request as any).rawBody || JSON.stringify(request.body);
+      // Obtener el raw body
+      // En Vercel con fastify-raw-body, el raw body está en request.rawBody
+      let payload: string;
+      
+      if ((request as any).rawBody) {
+        payload = (request as any).rawBody;
+      } else if (Buffer.isBuffer(request.body)) {
+        payload = request.body.toString('utf8');
+      } else if (typeof request.body === 'string') {
+        payload = request.body;
+      } else {
+        payload = JSON.stringify(request.body);
+      }
 
       // Verificar la firma del webhook
       let event: Stripe.Event;
