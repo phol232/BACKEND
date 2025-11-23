@@ -108,17 +108,25 @@ export class PaymentService {
   async recordTransaction(params: RecordTransactionParams) {
     try {
       const transactionData = {
-        userId: params.userId,
-        chargeId: params.chargeId,
-        amount: params.amount,
+        mfId: params.microfinancieraId,
+        type: 'PAYMENT',
+        refType: params.loanId ? 'loan' : 'account',
+        refId: params.loanId || params.accountId || '',
+        debit: params.amount,
+        credit: 0,
         currency: params.currency,
-        status: params.status,
-        description: params.description,
-        loanId: params.loanId || null,
-        accountId: params.accountId || null,
-        culqiResponse: params.culqiResponse,
+        branchId: 'default_branch',
         createdAt: Timestamp.now(),
-        updatedAt: Timestamp.now(),
+        metadata: {
+          userId: params.userId,
+          chargeId: params.chargeId,
+          status: params.status,
+          description: params.description,
+          loanId: params.loanId || null,
+          accountId: params.accountId || null,
+          paymentMethod: 'culqi',
+          culqiResponse: params.culqiResponse,
+        },
       };
 
       const transactionRef = await db()
