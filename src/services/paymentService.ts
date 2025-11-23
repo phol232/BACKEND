@@ -125,7 +125,7 @@ export class PaymentService {
           loanId: params.loanId || null,
           accountId: params.accountId || null,
           paymentMethod: 'stripe',
-          stripeResponse: params.culqiResponse,
+          stripeResponse: params.stripeResponse,
         },
       };
 
