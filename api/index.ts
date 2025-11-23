@@ -39,12 +39,15 @@ async function setup() {
   const shouldEnableSwagger = !isVercel && !isProduction && config.nodeEnv === 'development';
 
   // Raw Body plugin (necesario para webhooks de Stripe)
-  await fastify.register(rawBody, {
-    field: 'rawBody',
-    global: false,
-    encoding: false, // Mantener como Buffer
-    runFirst: true,
-    routes: ['/api/stripe/webhook'], // Solo para el webhook de Stripe
+  // Configurar para que preserve el raw body solo en la ruta del webhook
+  fastify.addContentTypeParser('application/json', { parseAs: 'buffer' }, async (req, body: Buffer) => {
+    // Si es el webhook de Stripe, guardar el raw body
+    if (req.url === '/api/stripe/webhook') {
+      (req as any).rawBody = body.toString('utf8');
+      return body;
+    }
+    // Para otras rutas, parsear como JSON normalmente
+    return JSON.parse(body.toString('utf8'));
   });
 
   // CORS
