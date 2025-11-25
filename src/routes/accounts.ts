@@ -346,4 +346,79 @@ export async function accountRoutes(fastify: FastifyInstance) {
       }
     }
   );
+
+  // Eliminar cuenta permanentemente (GDPR - Right to be forgotten)
+  fastify.delete<{
+    Params: {
+      microfinancieraId: string;
+      accountId: string;
+    };
+    Body: {
+      reason: string;
+      confirmation: string;
+    };
+  }>(
+    '/:microfinancieraId/:accountId',
+    {
+      preHandler: authenticate,
+      schema: {
+        description: 'Eliminar cuenta y todos sus datos permanentemente (GDPR)',
+        tags: ['accounts'],
+        security: [{ bearerAuth: [] }],
+        body: {
+          type: 'object',
+          required: ['reason', 'confirmation'],
+          properties: {
+            reason: { 
+              type: 'string',
+              description: 'Motivo de la eliminación'
+            },
+            confirmation: { 
+              type: 'string',
+              description: 'Debe ser "DELETE" para confirmar'
+            },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const { microfinancieraId, accountId } = request.params;
+        const { reason, confirmation } = request.body;
+        const user = (request as AuthenticatedRequest).user;
+        const ipAddress = request.ip || request.headers['x-forwarded-for'] as string;
+
+        // Validar confirmación
+        if (confirmation !== 'DELETE') {
+          return reply.code(400).send({ 
+            error: 'Confirmación inválida. Debe enviar "DELETE" para confirmar la eliminación permanente.' 
+          });
+        }
+
+        // Validar motivo
+        if (!reason || reason.trim().length < 10) {
+          return reply.code(400).send({ 
+            error: 'El motivo debe tener al menos 10 caracteres' 
+          });
+        }
+
+        const result = await accountService.deleteAccount(
+          microfinancieraId,
+          accountId,
+          user.uid,
+          reason,
+          ipAddress
+        );
+
+        return reply.send({ 
+          success: true, 
+          message: 'Cuenta y todos los datos asociados eliminados permanentemente',
+          deletedItems: result.deletedItems
+        });
+      } catch (error: any) {
+        fastify.log.error(error);
+        return reply.code(400).send({ error: error.message });
+      }
+    }
+  );
 }

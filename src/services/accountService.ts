@@ -540,4 +540,215 @@ export class AccountService {
       incidents: 0, // TODO: Implementar cuando haya sistema de incidencias
     };
   }
+
+  /**
+   * Elimina completamente una cuenta y todos sus datos relacionados
+   * GDPR/Privacy compliance - Right to be forgotten
+   */
+  async deleteAccount(
+    microfinancieraId: string,
+    accountId: string,
+    userId: string,
+    reason: string,
+    ipAddress?: string
+  ): Promise<{ deletedItems: string[] }> {
+    const deletedItems: string[] = [];
+
+    // 1. Obtener la cuenta
+    const accountRef = db()
+      .collection('microfinancieras')
+      .doc(microfinancieraId)
+      .collection('accounts')
+      .doc(accountId);
+
+    const accountDoc = await accountRef.get();
+    if (!accountDoc.exists) {
+      throw new Error('Cuenta no encontrada');
+    }
+
+    const account = accountDoc.data() as Account;
+    const accountUserId = account.userId;
+
+    // Registrar auditoría ANTES de eliminar
+    await this.auditService.log(
+      userId,
+      'ACCOUNT_DELETED',
+      'account',
+      accountId,
+      { account: { ...account, id: accountId } },
+      { deleted: true, reason },
+      accountId,
+      { ipAddress }
+    );
+
+    // 2. Eliminar transiciones de la cuenta
+    const transitionsSnapshot = await accountRef.collection('transitions').get();
+    const transitionDeletes = transitionsSnapshot.docs.map((doc) => doc.ref.delete());
+    await Promise.all(transitionDeletes);
+    if (transitionsSnapshot.size > 0) {
+      deletedItems.push(`${transitionsSnapshot.size} transiciones de cuenta`);
+    }
+
+    // 3. Eliminar tarjetas asociadas a la cuenta
+    const cardsSnapshot = await db()
+      .collection('microfinancieras')
+      .doc(microfinancieraId)
+      .collection('cards')
+      .where('accountId', '==', accountId)
+      .get();
+
+    for (const cardDoc of cardsSnapshot.docs) {
+      // Eliminar transiciones de la tarjeta
+      const cardTransitionsSnapshot = await cardDoc.ref.collection('transitions').get();
+      const cardTransitionDeletes = cardTransitionsSnapshot.docs.map((doc) => doc.ref.delete());
+      await Promise.all(cardTransitionDeletes);
+      
+      // Eliminar la tarjeta
+      await cardDoc.ref.delete();
+    }
+    if (cardsSnapshot.size > 0) {
+      deletedItems.push(`${cardsSnapshot.size} tarjetas`);
+    }
+
+    // 4. Eliminar solicitudes de crédito del usuario
+    const applicationsSnapshot = await db()
+      .collection('microfinancieras')
+      .doc(microfinancieraId)
+      .collection('loanApplications')
+      .where('customerId', '==', accountUserId || accountId)
+      .get();
+
+    const applicationDeletes = applicationsSnapshot.docs.map((doc) => doc.ref.delete());
+    await Promise.all(applicationDeletes);
+    if (applicationsSnapshot.size > 0) {
+      deletedItems.push(`${applicationsSnapshot.size} solicitudes de crédito`);
+    }
+
+    // 5. Eliminar préstamos activos del usuario
+    const loansSnapshot = await db()
+      .collection('microfinancieras')
+      .doc(microfinancieraId)
+      .collection('loans')
+      .where('customerId', '==', accountUserId || accountId)
+      .get();
+
+    for (const loanDoc of loansSnapshot.docs) {
+      // Eliminar cuotas del préstamo
+      const installmentsSnapshot = await loanDoc.ref.collection('installments').get();
+      const installmentDeletes = installmentsSnapshot.docs.map((doc) => doc.ref.delete());
+      await Promise.all(installmentDeletes);
+      
+      // Eliminar el préstamo
+      await loanDoc.ref.delete();
+    }
+    if (loansSnapshot.size > 0) {
+      deletedItems.push(`${loansSnapshot.size} préstamos`);
+    }
+
+    // 6. Eliminar transacciones del usuario
+    const transactionsSnapshot = await db()
+      .collection('microfinancieras')
+      .doc(microfinancieraId)
+      .collection('transactions')
+      .where('accountId', '==', accountId)
+      .get();
+
+    const transactionDeletes = transactionsSnapshot.docs.map((doc) => doc.ref.delete());
+    await Promise.all(transactionDeletes);
+    if (transactionsSnapshot.size > 0) {
+      deletedItems.push(`${transactionsSnapshot.size} transacciones`);
+    }
+
+    // 7. Eliminar pagos del usuario
+    const paymentsSnapshot = await db()
+      .collection('microfinancieras')
+      .doc(microfinancieraId)
+      .collection('payments')
+      .where('accountId', '==', accountId)
+      .get();
+
+    const paymentDeletes = paymentsSnapshot.docs.map((doc) => doc.ref.delete());
+    await Promise.all(paymentDeletes);
+    if (paymentsSnapshot.size > 0) {
+      deletedItems.push(`${paymentsSnapshot.size} pagos`);
+    }
+
+    // 8. Eliminar documentos del usuario (si existen)
+    const documentsSnapshot = await db()
+      .collection('microfinancieras')
+      .doc(microfinancieraId)
+      .collection('documents')
+      .where('userId', '==', accountUserId || accountId)
+      .get();
+
+    const documentDeletes = documentsSnapshot.docs.map((doc) => doc.ref.delete());
+    await Promise.all(documentDeletes);
+    if (documentsSnapshot.size > 0) {
+      deletedItems.push(`${documentsSnapshot.size} documentos`);
+    }
+
+    // 9. Eliminar información del cliente (customer)
+    if (accountUserId) {
+      const customerSnapshot = await db()
+        .collection('microfinancieras')
+        .doc(microfinancieraId)
+        .collection('customers')
+        .where('userId', '==', accountUserId)
+        .get();
+
+      const customerDeletes = customerSnapshot.docs.map((doc) => doc.ref.delete());
+      await Promise.all(customerDeletes);
+      if (customerSnapshot.size > 0) {
+        deletedItems.push(`${customerSnapshot.size} registros de cliente`);
+      }
+    }
+
+    // 10. Finalmente, eliminar la cuenta
+    await accountRef.delete();
+    deletedItems.push('Cuenta principal');
+
+    // Enviar email de confirmación
+    try {
+      await this.emailService.sendEmail({
+        to: account.email,
+        toName: account.displayName || account.email,
+        subject: 'Confirmación de eliminación de cuenta',
+        htmlContent: `
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="UTF-8">
+            <style>
+              body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+              .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+              .header { background: #333; color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+              .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <div class="header">
+                <h1>Cuenta Eliminada</h1>
+              </div>
+              <div class="content">
+                <p>Estimado/a <strong>${account.displayName || account.email}</strong>,</p>
+                <p>Tu cuenta y todos los datos asociados han sido eliminados permanentemente de nuestro sistema.</p>
+                <p><strong>Datos eliminados:</strong></p>
+                <ul>
+                  ${deletedItems.map((item) => `<li>${item}</li>`).join('')}
+                </ul>
+                <p>Esta acción es irreversible. Si deseas volver a utilizar nuestros servicios, deberás crear una nueva cuenta.</p>
+              </div>
+            </div>
+          </body>
+          </html>
+        `,
+        textContent: `Tu cuenta y todos los datos asociados han sido eliminados permanentemente. Datos eliminados: ${deletedItems.join(', ')}`,
+      });
+    } catch (error) {
+      console.error('Error enviando email de confirmación de eliminación:', error);
+    }
+
+    return { deletedItems };
+  }
 }
