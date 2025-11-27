@@ -53,16 +53,33 @@ export async function userRoutes(fastify: FastifyInstance) {
   });
 
   // Get current user data (including role)
-  fastify.get('/me', {
+  fastify.get<{
+    Querystring: {
+      refresh?: string;
+    };
+  }>('/me', {
     preHandler: authenticate,
     schema: {
       description: 'Get current user data including role',
       tags: ['users'],
       security: [{ bearerAuth: [] }],
+      querystring: {
+        type: 'object',
+        properties: {
+          refresh: { type: 'string' },
+        },
+      },
     },
-  }, async (request: FastifyRequest, reply) => {
+  }, async (request, reply) => {
     try {
       const user = (request as any).user;
+      const { refresh } = request.query;
+      
+      // Si se solicita refresh, limpiar caché primero
+      if (refresh === 'true') {
+        userService.clearUserCache(user.uid);
+      }
+      
       const userData = await userService.getUser(user.uid);
       if (!userData) {
         return reply.code(404).send({ error: 'User not found' });

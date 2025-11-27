@@ -777,6 +777,12 @@ Este es un email automático, por favor no respondas a este mensaje.
     }
   }
 
+  public clearUserCache(uid: string): void {
+    const cacheKey = `user_${uid}`;
+    userCache.del(cacheKey);
+    console.log(`🗑️  Caché limpiado para usuario ${uid}`);
+  }
+
   async migrateUserRoles(microfinancieraId: string): Promise<{ updated: number; skipped: number; errors: number }> {
     console.log('🔄 Iniciando migración de roles para:', microfinancieraId);
     
@@ -825,6 +831,11 @@ Este es un email automático, por favor no respondas a este mensaje.
             primaryRoleId: primaryRole,
             updatedAt: admin.firestore.Timestamp.fromDate(new Date()),
           });
+          
+          // Limpiar caché del usuario
+          const cacheKey = `user_${uid}`;
+          userCache.del(cacheKey);
+          console.log(`🗑️  Caché limpiado para usuario ${uid}`);
           
           console.log(`✅ Usuario ${uid} actualizado con primaryRoleId:`, primaryRole);
           updated++;
