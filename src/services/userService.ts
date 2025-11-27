@@ -253,6 +253,7 @@ export class UserService {
       roles: [], // Vacío por ahora, se llenará al aprobar
       roleIds: roleIds, // El rol seleccionado
       primaryRoleId: primaryRole, // Establecer el rol principal desde el inicio
+      mfId: microfinancieraId, // Agregar el ID de la microfinanciera
       status: 'pending',
       createdAt: admin.firestore.Timestamp.fromDate(new Date()),
       updatedAt: admin.firestore.Timestamp.fromDate(new Date()),
@@ -826,9 +827,10 @@ Este es un email automático, por favor no respondas a este mensaje.
             else if (userData.roles.includes('agent')) primaryRole = 'employee';
           }
           
-          // Actualizar el usuario con primaryRoleId
+          // Actualizar el usuario con primaryRoleId y mfId
           await userDoc.ref.update({
             primaryRoleId: primaryRole,
+            mfId: microfinancieraId,
             updatedAt: admin.firestore.Timestamp.fromDate(new Date()),
           });
           
@@ -837,7 +839,7 @@ Este es un email automático, por favor no respondas a este mensaje.
           userCache.del(cacheKey);
           console.log(`🗑️  Caché limpiado para usuario ${uid}`);
           
-          console.log(`✅ Usuario ${uid} actualizado con primaryRoleId:`, primaryRole);
+          console.log(`✅ Usuario ${uid} actualizado con primaryRoleId: ${primaryRole} y mfId: ${microfinancieraId}`);
           updated++;
         } catch (error: any) {
           console.error(`❌ Error actualizando usuario ${userDoc.id}:`, error.message);
