@@ -22,7 +22,6 @@ import { productRoutes } from '../src/routes/products';
 import { paymentRoutes } from '../src/routes/payments';
 import { stripeRoutes } from '../src/routes/stripe';
 
-// Initialize Firebase once
 initializeFirebase();
 
 const fastify = Fastify({
@@ -33,20 +32,15 @@ const fastify = Fastify({
 
 // Setup
 async function setup() {
-  // Environment detection for Swagger UI
   const isVercel = process.env.VERCEL === '1' || process.env.VERCEL_ENV;
   const isProduction = config.nodeEnv === 'production';
   const shouldEnableSwagger = !isVercel && !isProduction && config.nodeEnv === 'development';
 
-  // Raw Body plugin (necesario para webhooks de Stripe)
-  // Configurar para que preserve el raw body solo en la ruta del webhook
   fastify.addContentTypeParser('application/json', { parseAs: 'buffer' }, async (req, body: Buffer) => {
-    // Si es el webhook de Stripe, guardar el raw body
     if (req.url === '/api/stripe/webhook') {
       (req as any).rawBody = body.toString('utf8');
       return body;
     }
-    // Para otras rutas, parsear como JSON normalmente
     return JSON.parse(body.toString('utf8'));
   });
 
@@ -56,8 +50,6 @@ async function setup() {
     credentials: true,
   });
 
-  // Swagger Documentation - Only in local development
-  // Disable completely in Vercel or production environments
   if (shouldEnableSwagger) {
     try {
       await fastify.register(swagger, {
@@ -211,7 +203,6 @@ async function setup() {
 </html>`;
   });
 
-  // Favicon routes to prevent 404 errors
   fastify.get('/favicon.ico', async (request, reply) => {
     reply.code(204);
     return;
@@ -222,12 +213,10 @@ async function setup() {
     return;
   });
 
-  // Health check
   fastify.get('/health', async () => {
     return { status: 'ok', timestamp: new Date().toISOString() };
   });
 
-  // Register routes
   await fastify.register(applicationRoutes, { prefix: '/api/applications' });
   await fastify.register(scoringRoutes, { prefix: '/api/scoring' });
   await fastify.register(decisionRoutes, { prefix: '/api/decisions' });
@@ -250,7 +239,6 @@ async function setup() {
 
 setup();
 
-// Export handler for Vercel
 export default async (req: any, res: any) => {
   await fastify.ready();
   fastify.server.emit('request', req, res);

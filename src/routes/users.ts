@@ -289,6 +289,40 @@ export async function userRoutes(fastify: FastifyInstance) {
     }
   });
 
+  // Migrate existing users to add primaryRoleId (temporary endpoint)
+  fastify.post('/migrate-roles', {
+    preHandler: [authenticate, requireRole(['admin'])],
+    schema: {
+      description: 'Migrate existing users to add primaryRoleId field',
+      tags: ['users'],
+      security: [{ bearerAuth: [] }],
+      body: {
+        type: 'object',
+        properties: {
+          microfinancieraId: { type: 'string' }
+        },
+        required: ['microfinancieraId']
+      }
+    },
+  }, async (request: FastifyRequest<{ Body: { microfinancieraId: string } }>, reply) => {
+    try {
+      const { microfinancieraId } = request.body;
+      
+      console.log('🔄 Iniciando migración de roles para microfinanciera:', microfinancieraId);
+      
+      const result = await userService.migrateUserRoles(microfinancieraId);
+      
+      return reply.send({ 
+        success: true, 
+        message: 'Migration completed',
+        ...result
+      });
+    } catch (error: any) {
+      fastify.log.error(error);
+      return reply.code(500).send({ error: error.message });
+    }
+  });
+
   // Notify new user registration
   fastify.post('/notify-registration', {
     schema: {

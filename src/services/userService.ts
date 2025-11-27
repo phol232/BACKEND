@@ -240,7 +240,8 @@ export class UserService {
     console.log('🆕 Creando usuario en microfinanciera:', { microfinancieraId, uid, email, role });
     
     // Mapear el rol seleccionado al roleId de Firestore
-    const roleIds = role ? [role] : [];
+    const roleIds = role ? [role] : ['employee'];
+    const primaryRole = role || 'employee';
     
     const newUserData = {
       userId: uid,
@@ -251,6 +252,7 @@ export class UserService {
       linkedProviders: [provider],
       roles: [], // Vacío por ahora, se llenará al aprobar
       roleIds: roleIds, // El rol seleccionado
+      primaryRoleId: primaryRole, // Establecer el rol principal desde el inicio
       status: 'pending',
       createdAt: admin.firestore.Timestamp.fromDate(new Date()),
       updatedAt: admin.firestore.Timestamp.fromDate(new Date()),
@@ -264,7 +266,7 @@ export class UserService {
       .doc(uid)
       .set(newUserData);
     
-    console.log('✅ Usuario creado en microfinanciera');
+    console.log('✅ Usuario creado en microfinanciera con rol:', primaryRole);
     
     // Enviar emails
     await this.sendApprovalEmail(uid, email, displayName);
@@ -276,7 +278,7 @@ export class UserService {
       displayName,
       provider,
       status: 'pending' as const,
-      role: 'employee' as const, // Default role
+      role: primaryRole as 'admin' | 'analyst' | 'employee',
       createdAt: newUserData.createdAt,
       updatedAt: newUserData.updatedAt,
     };
@@ -686,7 +688,7 @@ Este es un email automático, por favor no respondas a este mensaje.
   async approveUser(uid: string) {
     console.log('🔍 Buscando usuario para aprobar:', uid);
     const user = await this.getUser(uid);
-    console.log('👤 Usuario encontrado:', user ? { uid: user.uid, email: user.email, status: user.status } : 'NO ENCONTRADO');
+    console.log('👤 Usuario encontrado:', user ? { uid: user.uid, email: user.email, status: user.status, role: user.role } : 'NO ENCONTRADO');
     
     if (!user) {
       throw new Error(`Usuario no encontrado: ${uid}`);
@@ -703,18 +705,22 @@ Este es un email automático, por favor no respondas a este mensaje.
       throw new Error(`Usuario no está pendiente. Estado actual: ${user.status}`);
     }
 
-    console.log('✅ Aprobando usuario:', uid);
+    console.log('✅ Aprobando usuario:', uid, 'con rol:', user.role);
+    
+    // Establecer primaryRoleId basándose en el rol del usuario
     await this.updateUserInMicrofinanciera(uid, {
       status: 'approved',
+      primaryRoleId: user.role, // Establecer el rol principal
       approvedAt: admin.firestore.Timestamp.fromDate(new Date()),
       updatedAt: admin.firestore.Timestamp.fromDate(new Date()),
+      isActive: true,
     }, user.microfinancieraId);
     
     // Enviar email de confirmación de aprobación
     console.log('📧 Enviando email de confirmación de aprobación...');
     await this.sendApprovalConfirmationEmail(uid, user.email, user.displayName);
     
-    console.log('✅ Usuario aprobado exitosamente:', uid);
+    console.log('✅ Usuario aprobado exitosamente:', uid, 'con rol:', user.role);
   }
 
   async rejectUser(uid: string, reason?: string) {
@@ -768,6 +774,72 @@ Este es un email automático, por favor no respondas a este mensaje.
       console.error('❌ Error procesando token:', error.message);
       console.error('❌ Error completo:', error);
       return { success: false, message: `Token inválido o expirado: ${error.message}` };
+    }
+  }
+
+  async migrateUserRoles(microfinancieraId: string): Promise<{ updated: number; skipped: number; errors: number }> {
+    console.log('🔄 Iniciando migración de roles para:', microfinancieraId);
+    
+    let updated = 0;
+    let skipped = 0;
+    let errors = 0;
+    
+    try {
+      const usersSnapshot = await db()
+        .collection('microfinancieras')
+        .doc(microfinancieraId)
+        .collection('users')
+        .get();
+      
+      console.log(`📊 Total de usuarios encontrados: ${usersSnapshot.size}`);
+      
+      for (const userDoc of usersSnapshot.docs) {
+        try {
+          const userData = userDoc.data();
+          const uid = userDoc.id;
+          
+          // Si ya tiene primaryRoleId, saltar
+          if (userData.primaryRoleId) {
+            console.log(`⏭️  Usuario ${uid} ya tiene primaryRoleId:`, userData.primaryRoleId);
+            skipped++;
+            continue;
+          }
+          
+          // Determinar el rol basándose en roleIds o roles
+          let primaryRole: 'admin' | 'analyst' | 'employee' = 'employee';
+          
+          if (userData.roleIds && Array.isArray(userData.roleIds) && userData.roleIds.length > 0) {
+            if (userData.roleIds.includes('admin')) primaryRole = 'admin';
+            else if (userData.roleIds.includes('analyst')) primaryRole = 'analyst';
+            else if (userData.roleIds.includes('employee')) primaryRole = 'employee';
+            else if (userData.roleIds.includes('agent')) primaryRole = 'employee';
+          } else if (userData.roles && Array.isArray(userData.roles) && userData.roles.length > 0) {
+            if (userData.roles.includes('admin')) primaryRole = 'admin';
+            else if (userData.roles.includes('analyst')) primaryRole = 'analyst';
+            else if (userData.roles.includes('employee')) primaryRole = 'employee';
+            else if (userData.roles.includes('agent')) primaryRole = 'employee';
+          }
+          
+          // Actualizar el usuario con primaryRoleId
+          await userDoc.ref.update({
+            primaryRoleId: primaryRole,
+            updatedAt: admin.firestore.Timestamp.fromDate(new Date()),
+          });
+          
+          console.log(`✅ Usuario ${uid} actualizado con primaryRoleId:`, primaryRole);
+          updated++;
+        } catch (error: any) {
+          console.error(`❌ Error actualizando usuario ${userDoc.id}:`, error.message);
+          errors++;
+        }
+      }
+      
+      console.log(`✅ Migración completada: ${updated} actualizados, ${skipped} saltados, ${errors} errores`);
+      
+      return { updated, skipped, errors };
+    } catch (error: any) {
+      console.error('❌ Error en migración:', error.message);
+      throw error;
     }
   }
 }
